@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>BRIANE Admin</title>
+    <link rel="icon" type="image/x-icon" href="../assets/favicon.ico">
+    <link rel="stylesheet" href="../style.css">
+    <link rel="stylesheet" href="admin.css">
+    <link rel="stylesheet" href="../background/weather-backgrounds.css">
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-firestore-compat.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="../background/background-manager.js"></script>
+</head>
+<body class="admin-dashboard">
+<!-- Splash Screen -->
+<div id="splash-screen" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #ffffff; z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center; transition: opacity 0.5s ease; pointer-events: none;">
+    <div class="logo-box" style="width: 80px; height: 80px; margin-bottom: 20px; background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); border-radius: 20px; display: flex; align-items: center; justify-content: center;">
+        <img src="../assets/icon.png" alt="BRIANE Logo" style="width: 50px; height: 50px; object-fit: contain;">
+    </div>
+    <h2 style="font-family: 'Plus Jakarta Sans', sans-serif; font-weight: 800; color: #0f172a; margin: 0; text-align: center; padding: 0 20px;">BRIANE Admin</h2>
+    <p style="font-family: 'Plus Jakarta Sans', sans-serif; color: #64748b; margin-top: 8px; text-align: center; padding: 0 20px;">Barangay Rainfall Intelligence and Alert Network for Emergencies—An SMS-Based Flood Early Warning System for Barangays Using Rainfall Threshold Models</p>
+    <div class="loader-line" style="width: 150px; height: 4px; background: #f1f5f9; border-radius: 10px; margin-top: 24px; overflow: hidden; position: relative;">
+        <div class="loader-inner" style="position: absolute; width: 40%; height: 100%; background: #6366f1; border-radius: 10px;"></div>
+    </div>
+</div>
+
+<div class="app-layout">
+    <!-- Sidebar for Desktop -->
+    <aside class="desktop-sidebar">
+        <div class="sidebar-header">
+            <div class="logo-box">
+                <img src="../assets/icon.png" alt="Logo" style="width: 24px; height: 24px; object-fit: contain;">
+            </div>
+            <span class="app-name">BRIANE</span>
+        </div>
+
+        <nav class="sidebar-nav">
+            <a href="#" class="nav-item active" data-section="overview">
+                <i data-lucide="layout-grid"></i>
+                <span>Overview</span>
+            </a>
+            <a href="#" class="nav-item" data-section="analytics">
+                <i data-lucide="bar-chart-2"></i>
+                <span>Detailed Trends</span>
+            </a>
+            <a href="#" class="nav-item" data-section="users">
+                <i data-lucide="users"></i>
+                <span>Users</span>
+            </a>
+            <a href="#" class="nav-item" data-section="sim">
+                <i data-lucide="rss"></i>
+                <span>SIM Status</span>
+            </a>
+            <a href="#" class="nav-item" data-section="reports">
+                <i data-lucide="calendar-days"></i>
+                <span>Weekly Insights</span>
+            </a>
+            <a href="#" class="nav-item" data-section="settings">
+                <i data-lucide="sliders"></i>
+                <span>Settings</span>
+            </a>
+        </nav>
+
+        <button id="admin-logout-btn" class="logout-link logout-action-trigger">
+            <i data-lucide="log-out"></i>
+            <span>Sign Out</span>
+        </button>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="content-view">
+        <header class="view-header">
+            <div class="header-left">
+                <div class="mobile-logo-box">
+                    <img src="../assets/icon.png" alt="Logo" style="width: 24px; height: 24px; object-fit: contain;">
+                </div>
+                <span class="mobile-brand">BRIANE</span>
+            </div>
+            <div class="header-right">
+                <div class="system-badge" id="device-status-badge">
+                    <div class="pulse-dot" id="header-status-dot"></div>
+                    <span id="device-status-value">Connecting...</span>
+                </div>
+                <button class="mobile-logout-btn logout-action-trigger" title="Sign Out">
+                    <i data-lucide="log-out"></i>
+                </button>
+            </div>
+        </header>
+
+        <div class="scroll-area">
+            <!-- Welcome Section (visible on desktop, hidden on mobile) -->
+            <div class="welcome-section">
+                <div class="welcome-header-row">
+                    <div>
+                        <h1 id="page-title">Overview</h1>
+                        <p class="user-welcome">Hello, <span id="admin-display-email">Admin</span></p>
+                    </div>
+                    <div class="system-badge desktop-status" id="device-status-badge-desktop">
+                        <div class="pulse-dot" id="header-status-dot-desktop"></div>
+                        <span id="device-status-value-desktop">Connecting...</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Overview Section -->
+            <div id="section-overview" class="view-section active">
+                <div class="stats-grid-modern">
+                    <div class="metric-card-glass">
+                        <div class="metric-icon-box blue">
+                            <i data-lucide="activity"></i>
+                        </div>
+                        <div class="metric-info">
+                            <label>System Status</label>
+                            <h3 id="device-status-summary">Checking</h3>
+                        </div>
+                    </div>
+                    <div class="metric-card-glass">
+                        <div class="metric-icon-box amber">
+                            <i data-lucide="alert-triangle"></i>
+                        </div>
+                        <div class="metric-info">
+                            <label>Threshold</label>
+                            <h3><span id="current-threshold-display">--</span><small>mm</small></h3>
+                        </div>
+                    </div>
+                    <div class="metric-card-glass">
+                        <div class="metric-icon-box orange">
+                            <i data-lucide="thermometer"></i>
+                        </div>
+                        <div class="metric-info">
+                            <label>Temperature</label>
+                            <h3><span id="temp-summary">--.-</span><small>°C</small></h3>
+                        </div>
+                    </div>
+                    <div class="metric-card-glass">
+                        <div class="metric-icon-box cyan">
+                            <i data-lucide="droplets"></i>
+                        </div>
+                        <div class="metric-info">
+                            <label>Humidity</label>
+                            <h3><span id="humidity-summary">--</span><small>%</small></h3>
+                        </div>
+                    </div>
+                    <div class="metric-card-glass">
+                        <div class="metric-icon-box purple">
+                            <i data-lucide="gauge"></i>
+                        </div>
+                        <div class="metric-info">
+                            <label>Pressure</label>
+                            <h3><span id="pressure-summary">----</span><small>hPa</small></h3>
+                        </div>
+                    </div>
+                    <div class="metric-card-glass">
+                        <div class="metric-icon-box yellow">
+                            <i data-lucide="sun"></i>
+                        </div>
+                        <div class="metric-info">
+                            <label>Light Level</label>
+                            <h3><span id="light-summary">--</span><small>lux</small></h3>
+                        </div>
+                    </div>
+                    <div class="metric-card-glass">
+                        <div class="metric-icon-box teal">
+                            <i data-lucide="waves"></i>
+                        </div>
+                        <div class="metric-info">
+                            <label>Water Level</label>
+                            <h3><span id="water-summary">--</span><small>cm</small></h3>
+                        </div>
+                    </div>
+                    <div class="metric-card-glass gps-card">
+                        <div class="metric-icon-box rose">
+                            <i data-lucide="navigation"></i>
+                        </div>
+                        <div class="metric-info">
+                            <label>Device Location</label>
+                            <div class="gps-coords" id="location-name-display-admin" style="font-size: 1.1rem; font-weight: 800; color: #0f172a; margin-top: 2px;">
+                                --
+                            </div>
+                            <a id="map-link-btn-admin" href="https://www.google.com/maps" target="_blank" class="map-action-link" style="display: flex; align-items: center; gap: 4px; color: #4f46e5; text-decoration: none; font-size: 0.75rem; font-weight: 700; margin-top: 6px; transition: transform 0.2s;">
+                                View Live Map <i data-lucide="arrow-right"></i>
+                            </a>
+                        </div>
+                    </div>
+                    <div class="metric-card-glass">
+                        <div class="metric-icon-box green">
+                            <i data-lucide="users"></i>
+                        </div>
+                        <div class="metric-info">
+                            <label>Subscribers</label>
+                            <h3 id="total-users-count">0</h3>
+                        </div>
+                    </div>
+                    <div class="metric-card-glass">
+                        <div class="metric-icon-box rose">
+                            <i data-lucide="credit-card"></i>
+                        </div>
+                        <div class="metric-info">
+                            <label>SIM Credit</label>
+                            <h3 id="sim-quick-status">--</h3>
+                        </div>
+                    </div>
+                    <div class="metric-card-glass">
+                        <div class="metric-icon-box indigo">
+                            <i data-lucide="binary"></i>
+                        </div>
+                        <div class="metric-info">
+                            <label>Prediction Score</label>
+                            <h3><span id="prediction-value-summary">0.0</span><small>/10</small></h3>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="main-grid">
+                    <!-- Today's Hourly Temperature Timeline -->
+                    <div class="glass-card full-width hourly-temp-panel">
+                        <div class="card-head">
+                            <i data-lucide="clock"></i>
+                            <h3>Today's Temperature Timeline</h3>
+                        </div>
+                        <div class="hourly-forecast-row" id="hourly-temp-timeline">
+                            <div class="forecast-loading">
+                                <i data-lucide="loader-2" class="spin-icon"></i>
+                                <span>Loading timeline...</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Live Analytics & Outlook -->
+                    <div class="glass-card chart-panel">
+                        <div class="card-head">
+                            <i data-lucide="cloud-rain"></i>
+                            <h3>Precipitation Trend</h3>
+                        </div>
+                        <div class="chart-container-medium">
+                            <canvas id="mainRainfallChart"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="glass-card dual-chart-panel">
+                        <div class="card-head">
+                            <i data-lucide="line-chart"></i>
+                            <h3>Environmental Analytics</h3>
+                        </div>
+                        <div class="chart-container-medium">
+                            <canvas id="atmosphericChart"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="glass-card prediction-panel">
+                        <div class="card-head">
+                            <i data-lucide="sparkles"></i>
+                            <h3>Weather Outlook</h3>
+                        </div>
+                        <div class="prediction-content">
+                            <div class="outlook-main">
+                                <div id="prediction-icon-box" class="prediction-icon">
+                                    <i data-lucide="sun"></i>
+                                </div>
+                                <div class="outlook-info">
+                                    <h4 id="prediction-title">Analyzing...</h4>
+                                    <p id="prediction-desc">Gathering sensor data...</p>
+                                </div>
+                            </div>
+                            <div class="probability-bars">
+                                <div class="prob-item">
+                                    <label>Rain Probability</label>
+                                    <div class="progress-bg"><div id="prob-rain" class="progress-fill blue" style="width: 0%"></div></div>
+                                </div>
+                                <div class="prob-item">
+                                    <label>Flood Risk</label>
+                                    <div class="progress-bg"><div id="prob-flood" class="progress-fill red" style="width: 0%"></div></div>
+                                </div>
+                            </div>
+                            <!-- Sensor Breakdown -->
+                            <div class="prediction-breakdown" id="prediction-breakdown" style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid rgba(0,0,0,0.05); display: flex; flex-direction: column; gap: 8px;">
+                                <div class="breakdown-row" style="display: flex; justify-content: space-between; font-size: 0.75rem;">
+                                    <span class="breakdown-label" style="color: #64748b; font-weight: 600;">Pressure Factor</span>
+                                    <span class="breakdown-value" id="factor-pressure" style="font-weight: 700; color: #1e293b;">--</span>
+                                </div>
+                                <div class="breakdown-row" style="display: flex; justify-content: space-between; font-size: 0.75rem;">
+                                    <span class="breakdown-label" style="color: #64748b; font-weight: 600;">Humidity Factor</span>
+                                    <span class="breakdown-value" id="factor-humidity" style="font-weight: 700; color: #1e293b;">--</span>
+                                </div>
+                                <div class="breakdown-row" style="display: flex; justify-content: space-between; font-size: 0.75rem;">
+                                    <span class="breakdown-label" style="color: #64748b; font-weight: 600;">Light/Cloud Factor</span>
+                                    <span class="breakdown-value" id="factor-light" style="font-weight: 700; color: #1e293b;">--</span>
+                                </div>
+                                <div class="breakdown-row" style="display: flex; justify-content: space-between; font-size: 0.75rem;">
+                                    <span class="breakdown-label" style="color: #64748b; font-weight: 600;">Rain Trend Factor</span>
+                                    <span class="breakdown-value" id="factor-rain" style="font-weight: 700; color: #1e293b;">--</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+
+                    <div class="glass-card logs-panel">
+                        <div class="card-head between">
+                            <div class="flex-align">
+                                <i data-lucide="list"></i>
+                                <h3>System Logs</h3>
+                            </div>
+                            <button id="clear-logs-btn" class="text-btn danger">Clear All</button>
+                        </div>
+                        <div id="logs-container" class="log-list">
+                            <div class="log-empty">No events recorded.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Analytics Section -->
+            <div id="section-analytics" class="view-section">
+                <div class="detailed-charts-grid">
+                    <div class="glass-card chart-panel-large">
+                        <div class="card-head"><i data-lucide="thermometer"></i><h3>Temperature History</h3></div>
+                        <div class="chart-container-large"><canvas id="detailedTempChart"></canvas></div>
+                    </div>
+                    <div class="glass-card chart-panel-large">
+                        <div class="card-head"><i data-lucide="droplets"></i><h3>Humidity History</h3></div>
+                        <div class="chart-container-large"><canvas id="detailedHumChart"></canvas></div>
+                    </div>
+                    <div class="glass-card chart-panel-large">
+                        <div class="card-head"><i data-lucide="gauge"></i><h3>Pressure Trend</h3></div>
+                        <div class="chart-container-large"><canvas id="detailedPresChart"></canvas></div>
+                    </div>
+                    <div class="glass-card chart-panel-large">
+                        <div class="card-head"><i data-lucide="cloud-rain"></i><h3>Rainfall Intensity</h3></div>
+                        <div class="chart-container-large"><canvas id="detailedRainChart"></canvas></div>
+                    </div>
+                    <div class="glass-card chart-panel-large">
+                        <div class="card-head"><i data-lucide="waves"></i><h3>Water Level Trend</h3></div>
+                        <div class="chart-container-large"><canvas id="detailedWaterChart"></canvas></div>
+                    </div>
+                    <div class="glass-card chart-panel-large">
+                        <div class="card-head"><i data-lucide="sun"></i><h3>Light &amp; Cloud Cover</h3></div>
+                        <div class="chart-container-large"><canvas id="detailedLightChart"></canvas></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Users Section -->
+            <div id="section-users" class="view-section">
+                <div class="glass-card table-card">
+                    <div class="card-head">
+                        <i data-lucide="users"></i>
+                        <h3>User Management</h3>
+                    </div>
+                    <div class="table-scroll">
+                        <table class="fg-table">
+                            <thead>
+                            <tr>
+                                <th>Account</th>
+                                <th>Phone</th>
+                                <th>Status</th>
+                                <th>Action</th>
+                            </tr>
+                            </thead>
+                            <tbody id="user-table-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SIM Status Section -->
+            <div id="section-sim" class="view-section">
+                <div class="glass-card sim-card-view">
+                    <div class="card-head">
+                        <i data-lucide="rss"></i>
+                        <h3>SIM Diagnostics</h3>
+                    </div>
+                    <div class="sim-content">
+                        <div class="response-box">
+                            <span class="box-label">Last Network Response</span>
+                            <p id="sim-response">Waiting for device report...</p>
+                            <small>Checked: <span id="sim-last-check">--</span></small>
+                        </div>
+                        <div class="alert-banner danger" id="sim-expiry-alert" style="display: none;">
+                            <i data-lucide="alert-octagon"></i>
+                            <span>SIM balance or validity is low!</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Reports Section -->
+            <div id="section-reports" class="view-section">
+                <div class="main-grid" id="reports-main-grid">
+                    <div class="glass-card full-width">
+                        <div class="card-head">
+                            <i data-lucide="trending-up"></i>
+                            <h3>7-Day Rainfall Trend</h3>
+                        </div>
+                        <div class="chart-container-large">
+                            <canvas id="weeklyRainChart"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- 7-Day API Forecast Cards (Imported from User Dashboard) -->
+                    <div class="glass-card full-width">
+                        <div class="card-head">
+                            <i data-lucide="calendar-days"></i>
+                            <h3>7-Day Weather Forecast (Open-Meteo)</h3>
+                            <span class="live-indicator" id="forecast-location-label" style="font-size: 0.7rem; color: #64748b; margin-left: auto;">Location: --</span>
+                        </div>
+                        <div class="forecast-days-grid" id="forecast-days-container">
+                            <div class="forecast-loading">
+                                <i data-lucide="loader-2" class="spin-icon"></i>
+                                <span>Fetching forecast data...</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Hourly Precipitation Chart -->
+                    <div class="glass-card full-width">
+                        <div class="card-head">
+                            <i data-lucide="clock"></i>
+                            <h3>7-Day Precipitation Forecast</h3>
+                        </div>
+                        <div class="chart-container-medium">
+                            <canvas id="hourlyPrecipChart"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="glass-card">
+                        <div class="card-head">
+                            <i data-lucide="clipboard-list"></i>
+                            <h3>Weekly Summary Report</h3>
+                        </div>
+                        <div class="report-stats">
+                            <div class="report-item">
+                                <span>Total Weekly Rainfall</span>
+                                <strong id="weekly-total-rain">0.0 mm</strong>
+                            </div>
+                            <div class="report-item">
+                                <span>Average Temperature</span>
+                                <strong id="weekly-avg-temp">0.0 °C</strong>
+                            </div>
+                            <div class="report-item">
+                                <span>Peak Intensity</span>
+                                <strong id="weekly-peak-rain">0.0 mm</strong>
+                            </div>
+                            <div class="report-item">
+                                <span>Days with Rain</span>
+                                <strong id="weekly-rain-days">0</strong>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="glass-card">
+                        <div class="card-head">
+                            <i data-lucide="brain-circuit"></i>
+                            <h3>Model Prediction Parameters</h3>
+                        </div>
+                        <div class="prediction-params-list">
+                            <div class="param-row">
+                                <label>Z-R Relationship (Rain)</label>
+                                <span id="param-zr">a=200, b=1.6</span>
+                            </div>
+                            <div class="param-row">
+                                <label>Saturation Index</label>
+                                <span id="param-saturation">0.42</span>
+                            </div>
+                            <div class="param-row">
+                                <label>Forecast Confidence</label>
+                                <span id="param-confidence">88%</span>
+                            </div>
+                            <p class="param-note">Values are calculated using the localized anticipatory network model.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Settings Section -->
+            <div id="section-settings" class="view-section">
+                <div class="settings-grid">
+                    <!-- System Configuration -->
+                    <div class="glass-card config-panel">
+                        <div class="card-head">
+                            <i data-lucide="settings-2"></i>
+                            <h3>System Configuration</h3>
+                        </div>
+                        <div class="form-stack">
+                            <div class="form-group">
+                                <label>Alert Trigger Level</label>
+                                <div class="input-wrapper">
+                                    <input type="number" id="threshold-input-settings" placeholder="Value in mm">
+                                    <button id="update-threshold-btn-settings" class="btn-glow">Update</button>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>Emergency Message Template</label>
+                                <textarea id="alert-msg-input-settings" placeholder="Message content..."></textarea>
+                                <button id="save-msg-btn-settings" class="btn-glow full">Save Template</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- AI Model Calibration -->
+                    <div class="glass-card model-calibration-panel">
+                        <div class="card-head between">
+                            <div class="flex-align">
+                                <i data-lucide="brain-circuit"></i>
+                                <h3>AI Model Calibration</h3>
+                            </div>
+                            <button type="button" id="info-ai-btn" class="text-btn" title="Learn about AI Tuning" style="padding: 4px; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: rgba(0,0,0,0.03); color: #64748b;">
+                                <i data-lucide="info" style="width: 16px; height: 16px;"></i>
+                            </button>
+                        </div>
+                        <div class="form-stack">
+                            <div class="form-group">
+                                <label>Z-R Relationship Constants (R = aZ^b)</label>
+                                <div class="input-wrapper">
+                                    <input type="number" id="param-a-input" placeholder="a (e.g. 200)" step="1">
+                                    <input type="number" id="param-b-input" placeholder="b (e.g. 1.6)" step="0.1">
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>Prediction Weights (Total 100%)</label>
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                                    <div>
+                                        <label style="font-size: 0.65rem; color: #94a3b8;">Pressure (%)</label>
+                                        <input type="number" id="weight-pres" class="input-control" value="40" style="padding: 8px;">
+                                    </div>
+                                    <div>
+                                        <label style="font-size: 0.65rem; color: #94a3b8;">Humidity (%)</label>
+                                        <input type="number" id="weight-hum" class="input-control" value="20" style="padding: 8px;">
+                                    </div>
+                                    <div>
+                                        <label style="font-size: 0.65rem; color: #94a3b8;">Light (%)</label>
+                                        <input type="number" id="weight-light" class="input-control" value="20" style="padding: 8px;">
+                                    </div>
+                                    <div>
+                                        <label style="font-size: 0.65rem; color: #94a3b8;">Rain (%)</label>
+                                        <input type="number" id="weight-rain" class="input-control" value="20" style="padding: 8px;">
+                                    </div>
+                                </div>
+                            </div>
+                            <button id="save-model-config-btn" class="btn-glow full">Save AI Parameters</button>
+                        </div>
+                    </div>
+
+                    <!-- Analytics Display Settings -->
+                    <div class="glass-card chart-config-panel">
+                        <div class="card-head">
+                            <i data-lucide="bar-chart"></i>
+                            <h3>Analytics Display Settings</h3>
+                        </div>
+                        <div class="form-stack">
+                            <div class="form-group">
+                                <label>Graph Time Window</label>
+                                <select id="graph-window-select" class="input-control">
+                                    <option value="6">Last 6 Hours</option>
+                                    <option value="12" selected>Last 12 Hours</option>
+                                    <option value="24">Last 24 Hours</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Data Smoothing (Tension)</label>
+                                <input type="range" id="graph-tension-slider" min="0" max="100" value="40" class="range-input">
+                                <div class="range-labels">
+                                    <span>Sharp</span>
+                                    <span>Curvy</span>
+                                </div>
+                            </div>
+                            <button id="save-chart-settings-btn" class="btn-glow full">Apply Style</button>
+                        </div>
+                    </div>
+
+                    <!-- Alerts & Maintenance -->
+                    <div class="glass-card system-alert-panel">
+                        <div class="card-head">
+                            <i data-lucide="bell-ring"></i>
+                            <h3>Alerts & Maintenance</h3>
+                        </div>
+                        <div class="form-stack">
+                            <div class="form-group">
+                                <label>Minimum Alert Interval (Cooldown)</label>
+                                <div style="display: flex; align-items: center; gap: 10px;">
+                                    <input type="number" id="alert-cooldown-input" class="input-control" value="5" step="0.5" style="flex: 1; min-width: 0;">
+                                    <span style="font-weight: 800; color: #64748b; white-space: nowrap;">Hours</span>
+                                </div>
+                                <small style="display: block; margin-top: 4px; color: #94a3b8;">Wait time between recurring emergency SMS alerts.</small>
+                            </div>
+                            <div class="form-group" style="background: rgba(245, 158, 11, 0.05); padding: 1rem; border-radius: 12px; border: 1px dashed rgba(245, 158, 11, 0.2);">
+                                <div style="display: flex; justify-content: space-between; align-items: center;">
+                                    <div>
+                                        <label style="margin: 0; color: #d97706;">System Maintenance Mode</label>
+                                        <p style="margin: 4px 0 0; font-size: 0.7rem; color: #92400e;">Suspends all automatic SMS alerts.</p>
+                                    </div>
+                                    <input type="checkbox" id="maintenance-toggle" style="width: 20px; height: 20px; cursor: pointer;">
+                                </div>
+                            </div>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 1rem;">
+                                <button id="save-alert-config-btn" class="btn-glow">Apply System State</button>
+                                <button id="trigger-manual-sms-btn" class="btn-glow warning" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);">
+                                    <i data-lucide="send" style="width: 16px; height: 16px; vertical-align: middle; margin-right: 6px;"></i>Send Manual SMS
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Hardware & Transmission -->
+                    <div class="glass-card hardware-settings-panel sim-control-panel">
+                        <div class="card-head between">
+                            <div class="flex-align">
+                                <i data-lucide="cpu"></i>
+                                <h3>Hardware & Transmission</h3>
+                            </div>
+                            <button type="button" id="info-hw-btn" class="text-btn" title="Learn about Hardware Config" style="padding: 4px; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: rgba(0,0,0,0.03); color: #64748b;">
+                                <i data-lucide="info" style="width: 16px; height: 16px;"></i>
+                            </button>
+                        </div>
+                        <div class="form-stack">
+                            <!-- WiFi Fallback Section -->
+                            <div class="form-group" style="background: rgba(99, 102, 241, 0.03); padding: 1rem; border-radius: 12px; border: 1px solid rgba(99, 102, 241, 0.1);">
+                                <label style="color: #4f46e5;"><i data-lucide="wifi" style="width: 14px; height: 14px; vertical-align: middle; margin-right: 4px;"></i> WiFi Fallback Configuration</label>
+                                <div class="input-wrapper" style="margin-top: 8px;">
+                                    <input type="text" id="wifi-ssid-input" class="input-control" placeholder="WiFi SSID (Name)" style="flex: 1;">
+                                    <input type="password" id="wifi-pass-input" class="input-control" placeholder="WiFi Password" style="flex: 1;">
+                                </div>
+                                <p style="font-size: 0.65rem; color: #64748b; margin-top: 6px;">Used when GSM data (load) is unavailable or signal is weak.</p>
+                            </div>
+
+                            <div class="form-group">
+                                <label>Sensor Calibration Offsets</label>
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                                    <div>
+                                        <label style="font-size: 0.65rem; color: #94a3b8;">Temperature (°C) - BME280</label>
+                                        <input type="number" id="temp-offset-input" class="input-control" placeholder="+/- °C" step="0.1" style="padding: 8px; width: 100%;">
+                                    </div>
+                                    <div>
+                                        <label style="font-size: 0.65rem; color: #94a3b8;">True Zero Adjustment - JSN-SR04T</label>
+                                        <input type="number" id="water-offset-input" class="input-control" placeholder="+/- cm" step="1" style="padding: 8px; width: 100%;">
+                                    </div>
+                                </div>
+                                <div style="margin-top: 10px;">
+                                    <label style="font-size: 0.65rem; color: #94a3b8;">Sensor-to-Ground Distance (cm)</label>
+                                    <input type="number" id="mount-height-input" class="input-control" placeholder="e.g. 200" step="1" style="padding: 8px; width: 100%;">
+                                    <p style="font-size: 0.6rem; color: #94a3b8; margin: 4px 0 0;">Total distance from the sensor face to the dry ground.</p>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>Transmission Intervals</label>
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                                    <div>
+                                        <label style="font-size: 0.65rem; color: #94a3b8;">Normal Mode</label>
+                                        <div style="display: flex; align-items: center; gap: 4px;">
+                                            <input type="number" id="normal-interval-input" class="input-control" placeholder="10" style="padding: 8px; width: 100%;">
+                                            <span style="font-size: 0.7rem; font-weight: 700; color: #64748b;">min</span>
+                                        </div>
+                                        <p style="font-size: 0.65rem; color: #94a3b8; margin: 4px 0 0;">Upload rate during stable weather (Saves Data).</p>
+                                    </div>
+                                    <div>
+                                        <label style="font-size: 0.65rem; color: #94a3b8;">Emergency Mode</label>
+                                        <div style="display: flex; align-items: center; gap: 4px;">
+                                            <input type="number" id="emergency-interval-input" class="input-control" placeholder="1" style="padding: 8px; width: 100%;">
+                                            <span style="font-size: 0.7rem; font-weight: 700; color: #64748b;">min</span>
+                                        </div>
+                                        <p style="font-size: 0.65rem; color: #94a3b8; margin: 4px 0 0;">Upload rate when alert threshold is reached.</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>Deployment Radius (km)</label>
+                                <input type="number" id="radius-input" class="input-control" placeholder="Coverage area" step="0.1">
+                                <small style="display: block; margin-top: 4px; color: #94a3b8;">Defines the physical localized area protected by this sensor.</small>
+                            </div>
+                            <div class="form-group">
+                                <label>Reference Baselines</label>
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                                    <div>
+                                        <label style="font-size: 0.65rem; color: #94a3b8;">Max Clear Lux</label>
+                                        <input type="number" id="max-lux-input" class="input-control" placeholder="e.g. 65000" style="padding: 8px; width: 100%;">
+                                        <p style="font-size: 0.6rem; color: #94a3b8; margin: 4px 0 0;">Recorded peak lux at noon on a sunny day.</p>
+                                    </div>
+                                    <div>
+                                        <label style="font-size: 0.65rem; color: #94a3b8;">Base Pressure (hPa)</label>
+                                        <input type="number" id="base-pres-input" class="input-control" placeholder="e.g. 1013" step="0.1" style="padding: 8px; width: 100%;">
+                                        <p style="font-size: 0.6rem; color: #94a3b8; margin: 4px 0 0;">Standard sea-level pressure for your elevation.</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <button id="save-hw-config-btn" class="btn-glow full">Update Hardware Sync</button>
+                        </div>
+                    </div>
+
+                    <!-- Data Simulation (Manual Override) -->
+                    <div class="glass-card sim-control-panel">
+                        <div class="card-head">
+                            <i data-lucide="flask-conical"></i>
+                            <h3>Data Simulation (Manual Override)</h3>
+                        </div>
+                        <p class="setting-desc">Manually push sensor values to test system responsiveness and alerts.</p>
+
+                        <div class="sim-form-grid">
+                            <div class="form-group" style="grid-column: span 2;">
+                                <label>Simulated Date & Time (Optional)</label>
+                                <div style="display: flex; gap: 8px;">
+                                    <input type="datetime-local" id="sim-datetime" style="flex: 1; width: 100%;">
+                                    <button type="button" id="set-now-sim" class="text-btn success" style="white-space: nowrap; height: 42px; border: 1px solid rgba(16, 185, 129, 0.2); background: rgba(16, 185, 129, 0.05);">Set Now</button>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>Rainfall (mm)</label>
+                                <input type="number" id="sim-rain" step="0.1" value="0">
+                            </div>
+                            <div class="form-group">
+                                <label>Temp (°C)</label>
+                                <input type="number" id="sim-temp" step="0.1" value="28">
+                            </div>
+                            <div class="form-group">
+                                <label>Hum (%)</label>
+                                <input type="number" id="sim-hum" value="75">
+                            </div>
+                            <div class="form-group">
+                                <label>Pres (hPa)</label>
+                                <input type="number" id="sim-pres" step="0.1" value="1013">
+                            </div>
+                            <div class="form-group">
+                                <label>Light (lux)</label>
+                                <input type="number" id="sim-light" value="30000">
+                            </div>
+                            <div class="form-group">
+                                <label>Water Level (cm)</label>
+                                <input type="number" id="sim-water" step="0.1" value="10">
+                            </div>
+                        </div>
+                        <button id="push-sim-data" class="btn-glow full warning">Push Test Data</button>
+                        <small class="warning-note">Note: This will temporarily override actual sensor data on all dashboards.</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Mobile Bottom Nav -->
+    <nav class="mobile-nav">
+        <a href="#" class="nav-btn active" data-section="overview" id="nav-overview">
+            <i data-lucide="layout-grid"></i>
+            <span>Overview</span>
+        </a>
+        <a href="#" class="nav-btn" data-section="analytics" id="nav-analytics">
+            <i data-lucide="bar-chart-2"></i>
+            <span>Trends</span>
+        </a>
+        <a href="#" class="nav-btn" data-section="users" id="nav-users">
+            <i data-lucide="users"></i>
+            <span>Users</span>
+        </a>
+        <a href="#" class="nav-btn" data-section="sim" id="nav-sim">
+            <i data-lucide="rss"></i>
+            <span>SIM</span>
+        </a>
+        <a href="#" class="nav-btn" data-section="reports" id="nav-reports">
+            <i data-lucide="calendar-days"></i>
+            <span>Reports</span>
+        </a>
+        <a href="#" class="nav-btn" data-section="settings" id="nav-settings">
+            <i data-lucide="sliders"></i>
+            <span>Config</span>
+        </a>
+    </nav>
+</div>
+<script src="admin-dashboard.js"></script>
+</body>
+</html>
