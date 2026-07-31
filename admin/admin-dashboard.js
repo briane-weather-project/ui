@@ -1021,11 +1021,13 @@ let currentRainfallVal = 0.0;
 let currentRainRateVal = 0.0;
 let currentWaterVal = -1.0;
 let currentCloudCoverVal = 0.0;
+let currentLightVal = -1.0;
 
-function updateWeatherBackground(rainRate, water, cloudCover) {
+function updateWeatherBackground(rainRate, water, light) {
     let weatherType = "sunny";
 
-    if ((water !== undefined && water >= 20.0) || (rainRate !== undefined && rainRate >= 15.0)) {
+    const maxCapacity = physicalMountHeight * 0.8;
+    if ((water !== undefined && water >= maxCapacity) || (rainRate !== undefined && rainRate >= 15.0)) {
         weatherType = "stormy";
     } else if (rainRate !== undefined && rainRate > 0.0) {
         weatherType = "rainy";
@@ -1033,8 +1035,8 @@ function updateWeatherBackground(rainRate, water, cloudCover) {
         const hour = new Date().getHours();
         if (hour >= 19 || hour < 5) {
             weatherType = 'night';
-        } else if (cloudCover !== undefined && cloudCover >= 70.0) {
-            weatherType = 'cloudy';
+        } else if (light !== undefined && light >= 0 && light < 6000) {
+            weatherType = 'cloudy'; // Low light during daytime = overcast sky
         } else {
             weatherType = 'sunny';
         }
@@ -1167,13 +1169,17 @@ function loadDashboardData() {
                 updateCharts(currentRainfallVal, tempVal, humidityVal, pressureVal, waterVal, lightVal);
             }
 
-            updatePredictions(tempVal, humidityVal, pressureVal, currentRainfallVal, lightVal, waterVal, pressureTrend, cloudCover, waterRiseRate);
-            const cloudCoverVal = data.cloudCover !== undefined ? parseFloat(data.cloudCover) : 0.0;
+            let cloudCoverVal = data.cloudCover !== undefined ? parseFloat(data.cloudCover) : 0.0;
+            if ((data.cloudCover === undefined || cloudCoverVal === 0) && lightVal >= 0) {
+                const ratio = Math.min(1.0, lightVal / maxClearSkyLux);
+                cloudCoverVal = (1.0 - ratio) * 100.0;
+            }
             // Store globally so config snapshot can re-use them
             currentRainRateVal = rainRateVal;
             currentWaterVal = waterVal;
             currentCloudCoverVal = cloudCoverVal;
-            updateWeatherBackground(rainRateVal, waterVal, cloudCoverVal);
+            currentLightVal = lightVal;
+            updateWeatherBackground(rainRateVal, waterVal, lightVal);
         } else {
             updateStatusUI("OFFLINE", "#ef4444", false);
             // Default background based on time if no data
@@ -1308,7 +1314,7 @@ function loadDashboardData() {
                 }
             });
 
-            updateWeatherBackground(currentRainRateVal, currentWaterVal, currentCloudCoverVal);
+            updateWeatherBackground(currentRainRateVal, currentWaterVal, currentLightVal);
         }
     });
 
