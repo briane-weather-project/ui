@@ -819,9 +819,9 @@ function updatePredictions(temp, hum, pres, rain, light, water, pressureTrend, c
         desc = "Unstable atmospheric system producing precipitation.";
         icon = "cloud-rain";
         rainProb = Math.max(rainProb, 80);
-    } else if (cloudCover > 70 && light >= 10) {
+    } else if ((light !== undefined && light >= 0 && light < 6000) || (cloudCover !== undefined && cloudCover >= 50.0)) {
         prediction = "Mostly Overcast";
-        desc = "Heavy cloud cover detected.";
+        desc = "Heavy cloud cover or reduced light level detected.";
         icon = "cloud";
         rainProb = Math.max(rainProb, 45);
     } else if (temp > 33 && hum < 55) {
