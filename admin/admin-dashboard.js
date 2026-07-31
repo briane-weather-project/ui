@@ -32,6 +32,14 @@ function updateAdminLiveDateTime() {
 updateAdminLiveDateTime();
 setInterval(updateAdminLiveDateTime, 1000);
 
+// Date/Time label helper for clean graph tooltips & x-axis ticks
+function formatDateTimeLabel(date) {
+    if (!date || isNaN(date.getTime())) date = new Date();
+    const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return `${dateStr}, ${timeStr}`;
+}
+
 // Charts Initialization
 const createDetailedChart = (id, label, color, bgColor) => {
     const canvas = document.getElementById(id);
@@ -48,16 +56,43 @@ const createDetailedChart = (id, label, color, bgColor) => {
                 backgroundColor: bgColor,
                 fill: true,
                 tension: 0.3,
-                borderWidth: 2
+                borderWidth: 2,
+                pointRadius: 3,
+                pointHoverRadius: 7,
+                pointHitRadius: 12,
+                pointBackgroundColor: color
             }]
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
             resizeDelay: 0,
+            interaction: {
+                mode: 'nearest',
+                intersect: false
+            },
+            plugins: {
+                tooltip: {
+                    enabled: true,
+                    backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                    titleColor: '#ffffff',
+                    bodyColor: '#cbd5e1',
+                    padding: 10,
+                    cornerRadius: 8,
+                    displayColors: true
+                }
+            },
             scales: {
                 y: { grid: { color: 'rgba(0,0,0,0.05)' } },
-                x: { grid: { display: false } }
+                x: {
+                    grid: { display: false },
+                    ticks: {
+                        maxTicksLimit: 6,
+                        maxRotation: 0,
+                        autoSkip: true,
+                        font: { size: 10, weight: '600' }
+                    }
+                }
             }
         }
     });
@@ -493,26 +528,48 @@ const initAtmosphericChart = () => {
                     data: [],
                     borderColor: '#f97316',
                     tension: 0.4,
-                    yAxisID: 'y'
+                    yAxisID: 'y',
+                    pointRadius: 3,
+                    pointHoverRadius: 7,
+                    pointHitRadius: 12
                 },
                 {
                     label: 'Hum (%)',
                     data: [],
                     borderColor: '#06b6d4',
                     tension: 0.4,
-                    yAxisID: 'y1'
+                    yAxisID: 'y1',
+                    pointRadius: 3,
+                    pointHoverRadius: 7,
+                    pointHitRadius: 12
                 }
             ]
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
+            interaction: {
+                mode: 'nearest',
+                intersect: false
+            },
+            plugins: {
+                legend: { position: 'top', labels: { boxWidth: 10, font: { size: 10, weight: '700' } } },
+                tooltip: {
+                    enabled: true,
+                    backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                    titleColor: '#ffffff',
+                    padding: 10,
+                    cornerRadius: 8
+                }
+            },
             scales: {
                 y: { type: 'linear', display: true, position: 'left', ticks: { font: { size: 10 } } },
                 y1: { type: 'linear', display: true, position: 'right', grid: { drawOnChartArea: false }, ticks: { font: { size: 10 } } },
-                x: { grid: { display: false }, ticks: { font: { size: 10 } } }
-            },
-            plugins: { legend: { position: 'top', labels: { boxWidth: 10, font: { size: 10, weight: '700' } } } }
+                x: {
+                    grid: { display: false },
+                    ticks: { maxTicksLimit: 6, maxRotation: 0, autoSkip: true, font: { size: 10 } }
+                }
+            }
         }
     });
 };
@@ -533,6 +590,8 @@ const initRainfallChart = () => {
                 fill: true,
                 tension: 0.4,
                 pointRadius: 4,
+                pointHoverRadius: 8,
+                pointHitRadius: 14,
                 pointBackgroundColor: '#6366f1',
                 borderWidth: 3
             }]
@@ -540,11 +599,27 @@ const initRainfallChart = () => {
         options: {
             responsive: true,
             maintainAspectRatio: false,
+            interaction: {
+                mode: 'nearest',
+                intersect: false
+            },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    enabled: true,
+                    backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                    titleColor: '#ffffff',
+                    padding: 10,
+                    cornerRadius: 8
+                }
+            },
             scales: {
                 y: { beginAtZero: true, grid: { color: '#f1f5f9' }, ticks: { font: { family: 'Plus Jakarta Sans', size: 10, weight: '600' } } },
-                x: { grid: { display: false }, ticks: { font: { family: 'Plus Jakarta Sans', size: 10, weight: '600' } } }
-            },
-            plugins: { legend: { display: false } }
+                x: {
+                    grid: { display: false },
+                    ticks: { maxTicksLimit: 6, maxRotation: 0, autoSkip: true, font: { family: 'Plus Jakarta Sans', size: 10, weight: '600' } }
+                }
+            }
         }
     });
 };
@@ -592,7 +667,7 @@ async function initializeChartHistory() {
             const history = snapshot.docs.map(doc => doc.data()).reverse();
             history.forEach(data => {
                 const time = data.timestamp ? (data.timestamp.toDate ? data.timestamp.toDate() : new Date(data.timestamp)) : new Date();
-                const timeLabel = time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                const timeLabel = formatDateTimeLabel(time);
 
                 const r = parseFloat(data.rainfall) || 0;
                 const t = parseFloat(data.temperature) || 0;
@@ -647,7 +722,7 @@ async function initializeChartHistory() {
 
 function updateCharts(rain, temp, hum, pres, water, light) {
     const now = new Date();
-    const timeLabel = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const timeLabel = formatDateTimeLabel(now);
     const maxPoints = currentGraphWindow * 60;
 
     const updateChartData = (chart, value, label) => {
@@ -1048,8 +1123,43 @@ function loadDashboardData() {
 
             const lightEl = document.getElementById('light-summary');
             const waterEl = document.getElementById('water-summary');
+            const rainEl = document.getElementById('rain-summary');
+            const rainRateEl = document.getElementById('rain-rate-summary');
+            const adminAlertBadge = document.getElementById('admin-alert-badge');
+            const adminRainIntensityBadge = document.getElementById('admin-rain-intensity-badge');
+
             if (lightEl) lightEl.innerText = lightVal >= 0 ? lightVal.toFixed(0) : "--";
             if (waterEl) waterEl.innerText = waterVal >= 0 ? waterVal.toFixed(1) : "--";
+            if (rainEl) rainEl.innerText = currentRainfallVal.toFixed(2);
+
+            const rainRateVal = data.rainRate !== undefined ? parseFloat(data.rainRate) : 0.0;
+            if (rainRateEl) rainRateEl.innerText = rainRateVal.toFixed(1);
+
+            // Update Admin Current Rain Risk Badge
+            if (adminAlertBadge) {
+                const dangerThreshold = alertThresholdVal;
+                const warningThreshold = alertThresholdVal * 0.5;
+                if (currentRainfallVal >= dangerThreshold) {
+                    adminAlertBadge.innerText = "CRITICAL";
+                    adminAlertBadge.className = "risk-badge danger";
+                } else if (currentRainfallVal >= warningThreshold) {
+                    adminAlertBadge.innerText = "WARNING";
+                    adminAlertBadge.className = "risk-badge warning";
+                } else if (currentRainfallVal > 0) {
+                    adminAlertBadge.innerText = "ALERT";
+                    adminAlertBadge.className = "risk-badge alert-level";
+                } else {
+                    adminAlertBadge.innerText = "Safe";
+                    adminAlertBadge.className = "risk-badge safe";
+                }
+            }
+
+            // Update Admin Rain Rate Intensity Badge
+            if (adminRainIntensityBadge) {
+                const intensityStr = data.rainIntensity || (rainRateVal >= 50.0 ? 'Violent' : rainRateVal >= 7.5 ? 'Heavy' : rainRateVal >= 2.5 ? 'Moderate' : rainRateVal > 0 ? 'Light' : 'None');
+                adminRainIntensityBadge.innerText = intensityStr;
+                adminRainIntensityBadge.className = intensityStr === 'None' ? 'risk-badge safe' : (intensityStr === 'Heavy' || intensityStr === 'Violent') ? 'risk-badge danger' : 'risk-badge warning';
+            }
 
             // Update charts when we have a valid and new reading
             if (lastSeenStr && lastSeenStr !== lastProcessedTime) {
@@ -1058,7 +1168,6 @@ function loadDashboardData() {
             }
 
             updatePredictions(tempVal, humidityVal, pressureVal, currentRainfallVal, lightVal, waterVal, pressureTrend, cloudCover, waterRiseRate);
-            const rainRateVal = data.rainRate !== undefined ? parseFloat(data.rainRate) : 0.0;
             const cloudCoverVal = data.cloudCover !== undefined ? parseFloat(data.cloudCover) : 0.0;
             // Store globally so config snapshot can re-use them
             currentRainRateVal = rainRateVal;
