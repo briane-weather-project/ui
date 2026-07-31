@@ -842,6 +842,7 @@ function startRealtimeUpdates() {
             const dewPoint = data.dewPoint !== undefined ? parseFloat(data.dewPoint) : 0.0;
             const heatIndex = data.heatIndex !== undefined ? parseFloat(data.heatIndex) : 0.0;
             const rainRate = data.rainRate !== undefined ? parseFloat(data.rainRate) : 0.0;
+            const rainIntensity = data.rainIntensity || 'None';
             let cloudCover = data.cloudCover !== undefined ? parseFloat(data.cloudCover) : 0.0;
             if ((data.cloudCover === undefined || cloudCover === 0) && light >= 0) {
                 const ratio = Math.min(1.0, light / maxClearSkyLux);
