@@ -1035,8 +1035,8 @@ function updateWeatherBackground(rainRate, water, light) {
         const hour = new Date().getHours();
         if (hour >= 19 || hour < 5) {
             weatherType = 'night';
-        } else if (light !== undefined && light >= 0 && light < 6000) {
-            weatherType = 'cloudy'; // Low light during daytime = overcast sky
+        } else if ((light !== undefined && light >= 0 && light < 6000) || (currentCloudCoverVal !== undefined && currentCloudCoverVal >= 50.0)) {
+            weatherType = 'cloudy'; // Low light or high cloud cover during daytime = overcast sky
         } else {
             weatherType = 'sunny';
         }
