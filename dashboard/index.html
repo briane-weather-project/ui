@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>BRIANE | Barangay Rainfall Intelligence and Alert Network for Emergencies</title>
+    <link rel="icon" type="image/x-icon" href="../assets/favicon.ico">
+    <link rel="stylesheet" href="../style.css">
+    <link rel="stylesheet" href="dashboard.css">
+    <link rel="stylesheet" href="../background/weather-backgrounds.css">
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-firestore-compat.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="../background/background-manager.js"></script>
+</head>
+<body class="user-dashboard">
+    <!-- Splash Screen -->
+    <div id="splash-screen" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #ffffff; z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center; transition: opacity 0.5s ease; pointer-events: none;">
+        <div class="logo-box" style="width: 80px; height: 80px; margin-bottom: 20px; background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); border-radius: 20px; display: flex; align-items: center; justify-content: center;">
+            <img src="../assets/icon.png" alt="BRIANE Logo" style="width: 50px; height: 50px; object-fit: contain;">
+        </div>
+        <h2 style="font-family: 'Plus Jakarta Sans', sans-serif; font-weight: 800; color: #0f172a; margin: 0; text-align: center; padding: 0 20px;">BRIANE</h2>
+        <p style="font-family: 'Plus Jakarta Sans', sans-serif; color: #64748b; margin-top: 8px; text-align: center; padding: 0 20px;">Barangay Rainfall Intelligence and Alert Network for Emergencies—An SMS-Based Flood Early Warning System for Barangays Using Rainfall Threshold Models</p>
+        <div class="loader-line" style="width: 150px; height: 4px; background: #f1f5f9; border-radius: 10px; margin-top: 24px; overflow: hidden; position: relative;">
+            <div class="loader-inner" style="position: absolute; width: 40%; height: 100%; background: #6366f1; border-radius: 10px;"></div>
+        </div>
+    </div>
+
+    <div class="app-layout">
+        <!-- Sidebar for Desktop -->
+        <aside class="desktop-sidebar">
+            <div class="sidebar-header">
+                <div class="logo-box">
+                    <img src="../assets/icon.png" alt="Logo" style="width: 24px; height: 24px; object-fit: contain;">
+                </div>
+                <span class="app-name">BRIANE</span>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="#" class="nav-item active" data-section="home">
+                    <i data-lucide="layout-grid"></i>
+                    <span>Dashboard</span>
+                </a>
+                <a href="#" class="nav-item" data-section="analytics">
+                    <i data-lucide="bar-chart-2"></i>
+                    <span>Detailed Trends</span>
+                </a>
+                <a href="#" class="nav-item" data-section="forecast">
+                    <i data-lucide="calendar-days"></i>
+                    <span>7-Day Forecast</span>
+                </a>
+                <a id="map-link-sidebar" href="https://www.google.com/maps" target="_blank" class="nav-item">
+                    <i data-lucide="map-pin"></i>
+                    <span>Live Map</span>
+                </a>
+            </nav>
+            <button class="logout-link logout-trigger">
+                <i data-lucide="log-out"></i>
+                <span>Sign Out</span>
+            </button>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="content-view">
+            <!-- New Minimal Header -->
+            <header class="view-header">
+                <div class="header-left">
+                    <div class="mobile-logo-box">
+                        <img src="../assets/icon.png" alt="Logo" style="width: 24px; height: 24px; object-fit: contain;">
+                    </div>
+                    <span class="mobile-brand">BRIANE</span>
+                </div>
+                <div class="header-right">
+                    <div class="system-status-pill" id="system-status-container">
+                        <div id="system-status-dot" class="pulse-dot"></div>
+                        <span id="system-status-text">...</span>
+                    </div>
+                    <button class="header-icon-btn logout-trigger">
+                        <i data-lucide="log-out"></i>
+                    </button>
+                </div>
+            </header>
+
+            <div class="scroll-area">
+                <!-- Home Section -->
+                <div id="section-home" class="dashboard-section active">
+                    <!-- Welcome Section -->
+                    <div class="welcome-section">
+                        <div class="welcome-header-row">
+                            <div>
+                                <h1 id="user-display-email">Hello!</h1>
+                                <p id="risk-level-text">Sensors are initializing...</p>
+                                <p id="live-date-time" style="font-size: 0.8rem; color: rgba(255,255,255,0.7); margin-top: 4px; font-weight: 500; letter-spacing: 0.3px;">
+                                    <i data-lucide="calendar" style="width: 13px; height: 13px; display: inline-block; vertical-align: -2px; margin-right: 4px;"></i>
+                                    <span id="live-date-text">Loading...</span>
+                                </p>
+                            </div>
+                            <div class="system-status-pill desktop-status" id="system-status-container-desktop">
+                                <div id="system-status-dot-desktop" class="pulse-dot"></div>
+                                <span id="system-status-text-desktop">...</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Metrics Grid — All Sensors -->
+                    <div class="stats-grid-modern">
+                        <!-- Rain -->
+                        <div class="metric-card-glass">
+                            <div class="metric-icon-box blue">
+                                <i data-lucide="cloud-rain"></i>
+                            </div>
+                            <div class="metric-info">
+                                <label>Current Rain</label>
+                                <div class="value-row">
+                                    <span class="value" id="rainfall-value">0.00</span>
+                                    <span class="unit">mm</span>
+                                </div>
+                                <div id="alert-badge" class="risk-badge safe">Safe</div>
+                            </div>
+                        </div>
+
+                        <!-- Rain Rate -->
+                        <div class="metric-card-glass">
+                            <div class="metric-icon-box amber">
+                                <i data-lucide="zap"></i>
+                            </div>
+                            <div class="metric-info">
+                                <label>Rain Rate</label>
+                                <div class="value-row">
+                                    <span class="value" id="rain-rate-value">0.0</span>
+                                    <span class="unit">mm/h</span>
+                                </div>
+                                <div id="rain-intensity-badge" class="risk-badge safe">None</div>
+                            </div>
+                        </div>
+
+                        <!-- Temperature -->
+                        <div class="metric-card-glass">
+                            <div class="metric-icon-box orange">
+                                <i data-lucide="thermometer"></i>
+                            </div>
+                            <div class="metric-info">
+                                <label>Temperature</label>
+                                <div class="value-row">
+                                    <span class="value" id="temp-value">--.-</span>
+                                    <span class="unit">°C</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Humidity -->
+                        <div class="metric-card-glass">
+                            <div class="metric-icon-box cyan">
+                                <i data-lucide="droplets"></i>
+                            </div>
+                            <div class="metric-info">
+                                <label>Humidity</label>
+                                <div class="value-row">
+                                    <span class="value" id="humidity-value">--</span>
+                                    <span class="unit">%</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Pressure -->
+                        <div class="metric-card-glass">
+                            <div class="metric-icon-box purple">
+                                <i data-lucide="gauge"></i>
+                            </div>
+                            <div class="metric-info">
+                                <label>Pressure</label>
+                                <div class="value-row">
+                                    <span class="value" id="pressure-value">----</span>
+                                    <span class="unit">hPa</span>
+                                </div>
+                                <div id="pressure-trend-badge" class="risk-badge safe">Stable</div>
+                            </div>
+                        </div>
+
+                        <!-- Light Level (BH1750) -->
+                        <div class="metric-card-glass">
+                            <div class="metric-icon-box yellow">
+                                <i data-lucide="sun"></i>
+                            </div>
+                            <div class="metric-info">
+                                <label>Light Level</label>
+                                <div class="value-row">
+                                    <span class="value" id="light-value">--</span>
+                                    <span class="unit">lux</span>
+                                </div>
+                                <div class="value-row sub-value">
+                                    <span class="sub-label">Cloud Cover:</span>
+                                    <span id="cloud-cover-value">--%</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Water Level (JSN-SR04T) -->
+                        <div class="metric-card-glass">
+                            <div class="metric-icon-box teal">
+                                <i data-lucide="waves"></i>
+                            </div>
+                            <div class="metric-info">
+                                <label>Water Level</label>
+                                <div class="value-row">
+                                    <span class="value" id="water-level-value">--</span>
+                                    <span class="unit">cm</span>
+                                </div>
+                                <div class="value-row sub-value">
+                                    <span class="sub-label">Rise Rate:</span>
+                                    <span id="water-rise-rate-value">-- cm/h</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Dew Point & Heat Index -->
+                        <div class="metric-card-glass">
+                            <div class="metric-icon-box green">
+                                <i data-lucide="wind"></i>
+                            </div>
+                            <div class="metric-info">
+                                <label>Comfort Index</label>
+                                <div class="value-row">
+                                    <span class="sub-label">Dew:</span>
+                                    <span class="value-sm" id="dew-point-value">--.-</span>
+                                    <span class="unit">°C</span>
+                                </div>
+                                <div class="value-row">
+                                    <span class="sub-label">Feels:</span>
+                                    <span class="value-sm" id="heat-index-value">--.-</span>
+                                    <span class="unit">°C</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Prediction Score -->
+                        <div class="metric-card-glass">
+                            <div class="metric-icon-box indigo">
+                                <i data-lucide="brain"></i>
+                            </div>
+                            <div class="metric-info">
+                                <label>Prediction Score</label>
+                                <div class="value-row">
+                                    <span class="value" id="prediction-score-value">0.0</span>
+                                    <span class="unit">/10</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- GPS -->
+                        <div class="metric-card-glass gps-card">
+                            <div class="metric-icon-box rose">
+                                <i data-lucide="navigation"></i>
+                            </div>
+                            <div class="metric-info">
+                                <label>Device Location</label>
+                                <div class="gps-coords" id="location-name-display">
+                                    Retrieving location...
+                                </div>
+                                <a id="map-link-btn" href="https://www.google.com/maps" target="_blank" class="map-action-link">
+                                    View Live Map <i data-lucide="arrow-right"></i>
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Main Content Grid -->
+                    <div class="dashboard-body-grid" id="home-grid">
+                        <!-- Today's Hourly Temperature Timeline -->
+                        <div class="panel-card hourly-temp-panel" style="grid-column: span 2;">
+                            <div class="panel-header">
+                                <div class="panel-title">
+                                    <i data-lucide="clock"></i>
+                                    <h3>Today's Temperature Timeline</h3>
+                                </div>
+                            </div>
+                            <div class="hourly-forecast-row" id="hourly-temp-timeline">
+                                <div class="forecast-loading">
+                                    <i data-lucide="loader-2" class="spin-icon"></i>
+                                    <span>Loading timeline...</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="panel-card chart-panel">
+                            <div class="panel-header">
+                                <div class="panel-title">
+                                    <i data-lucide="cloud-rain"></i>
+                                    <h3>Precipitation Trend</h3>
+                                </div>
+                                <span class="live-indicator">LIVE: <span id="last-update">--:--</span></span>
+                            </div>
+                            <div class="chart-container">
+                                <canvas id="mainRainfallChart"></canvas>
+                            </div>
+                        </div>
+
+                        <div class="panel-card chart-panel">
+                            <div class="panel-header">
+                                <div class="panel-title">
+                                    <i data-lucide="line-chart"></i>
+                                    <h3>Environmental Analytics</h3>
+                                </div>
+                            </div>
+                            <div class="chart-container multi-chart">
+                                <canvas id="atmosphericChart"></canvas>
+                            </div>
+                        </div>
+
+                        <!-- Enhanced Prediction Panel -->
+                        <div class="panel-card prediction-panel" id="home-prediction-card">
+                            <div class="panel-header">
+                                <div class="panel-title">
+                                    <i data-lucide="sparkles"></i>
+                                    <h3>Multi-Sensor Outlook</h3>
+                                </div>
+                            </div>
+                            <div class="prediction-content">
+                                <div class="outlook-main">
+                                    <div id="prediction-icon-box" class="prediction-icon">
+                                        <i data-lucide="sun"></i>
+                                    </div>
+                                    <div class="outlook-info">
+                                        <h4 id="prediction-title">Analyzing...</h4>
+                                        <p id="prediction-desc">Gathering sensor data for local forecast.</p>
+                                    </div>
+                                </div>
+                                <div class="probability-bars">
+                                    <div class="prob-item">
+                                        <label>Rain Probability</label>
+                                        <div class="progress-bg"><div id="prob-rain" class="progress-fill blue" style="width: 0%"></div></div>
+                                    </div>
+                                    <div class="prob-item">
+                                        <label>Flood Risk</label>
+                                        <div class="progress-bg"><div id="prob-flood" class="progress-fill red" style="width: 0%"></div></div>
+                                    </div>
+                                    <div class="prob-item">
+                                        <label>Water Level Risk</label>
+                                        <div class="progress-bg"><div id="prob-water" class="progress-fill teal" style="width: 0%"></div></div>
+                                    </div>
+                                </div>
+                                <!-- Sensor Breakdown -->
+                                <div class="prediction-breakdown" id="prediction-breakdown">
+                                    <div class="breakdown-row">
+                                        <span class="breakdown-label">Pressure Factor</span>
+                                        <span class="breakdown-value" id="factor-pressure">--</span>
+                                    </div>
+                                    <div class="breakdown-row">
+                                        <span class="breakdown-label">Humidity Factor</span>
+                                        <span class="breakdown-value" id="factor-humidity">--</span>
+                                    </div>
+                                    <div class="breakdown-row">
+                                        <span class="breakdown-label">Light/Cloud Factor</span>
+                                        <span class="breakdown-value" id="factor-light">--</span>
+                                    </div>
+                                    <div class="breakdown-row">
+                                        <span class="breakdown-label">Rain Trend Factor</span>
+                                        <span class="breakdown-value" id="factor-rain">--</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="panel-card info-panel">
+                            <h3>Sensor Awareness</h3>
+                            <p>4 high-precision sensors — BME280, tipping bucket, BH1750 light, and JSN-SR04T ultrasonic — provide multi-dimensional environmental monitoring.</p>
+                            <div class="admin-notice-box">
+                                <label>System Notice</label>
+                                <p id="admin-message-display">"Monitoring system active. Stay safe."</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Analytics Section -->
+                <div id="section-analytics" class="dashboard-section">
+                    <div class="analytics-header">
+                        <h2>Detailed Analytics</h2>
+                        <p>In-depth historical trends for each sensor parameter.</p>
+                    </div>
+
+                    <div class="detailed-charts-grid">
+                        <div class="panel-card chart-panel-large">
+                            <div class="panel-header">
+                                <div class="panel-title"><i data-lucide="thermometer"></i><h3>Temperature History</h3></div>
+                            </div>
+                            <div class="chart-container-large">
+                                <canvas id="detailedTempChart"></canvas>
+                            </div>
+                        </div>
+
+                        <div class="panel-card chart-panel-large">
+                            <div class="panel-header">
+                                <div class="panel-title"><i data-lucide="droplets"></i><h3>Humidity History</h3></div>
+                            </div>
+                            <div class="chart-container-large">
+                                <canvas id="detailedHumChart"></canvas>
+                            </div>
+                        </div>
+
+                        <div class="panel-card chart-panel-large">
+                            <div class="panel-header">
+                                <div class="panel-title"><i data-lucide="gauge"></i><h3>Atmospheric Pressure</h3></div>
+                            </div>
+                            <div class="chart-container-large">
+                                <canvas id="detailedPresChart"></canvas>
+                            </div>
+                        </div>
+
+                        <div class="panel-card chart-panel-large">
+                            <div class="panel-header">
+                                <div class="panel-title"><i data-lucide="cloud-rain"></i><h3>Rainfall Intensity</h3></div>
+                            </div>
+                            <div class="chart-container-large">
+                                <canvas id="detailedRainChart"></canvas>
+                            </div>
+                        </div>
+
+                        <!-- New: Water Level Chart -->
+                        <div class="panel-card chart-panel-large">
+                            <div class="panel-header">
+                                <div class="panel-title"><i data-lucide="waves"></i><h3>Water Level Trend</h3></div>
+                            </div>
+                            <div class="chart-container-large">
+                                <canvas id="detailedWaterChart"></canvas>
+                            </div>
+                        </div>
+
+                        <!-- New: Light & Cloud Cover Chart -->
+                        <div class="panel-card chart-panel-large">
+                            <div class="panel-header">
+                                <div class="panel-title"><i data-lucide="sun"></i><h3>Light &amp; Cloud Cover</h3></div>
+                            </div>
+                            <div class="chart-container-large">
+                                <canvas id="detailedLightChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Forecast Section — Open-Meteo API -->
+                <div id="section-forecast" class="dashboard-section">
+                    <div class="analytics-header">
+                        <h2>7-Day Weather Forecast</h2>
+                        <p>Today's prediction powered by your sensors • Extended forecast via Open-Meteo API.</p>
+                    </div>
+
+                    <div class="dashboard-body-grid" id="forecast-grid">
+                        <!-- Today's Sensor-Based Prediction -->
+                        <div class="panel-card today-forecast-panel" style="grid-column: span 2;">
+                            <div class="panel-header">
+                                <div class="panel-title">
+                                    <i data-lucide="radio-tower"></i>
+                                    <h3>Today — Live Sensor Prediction</h3>
+                                </div>
+                                <span class="live-indicator">SENSOR DATA</span>
+                            </div>
+                            <div class="today-forecast-content">
+                                <div class="today-main-weather">
+                                    <div id="today-weather-icon" class="today-icon">
+                                        <i data-lucide="sun"></i>
+                                    </div>
+                                    <div class="today-info">
+                                        <h2 id="today-condition">Analyzing Sensors...</h2>
+                                        <p id="today-detail">Combining all 4 sensors for today's outlook</p>
+                                    </div>
+                                </div>
+                                <div class="today-metrics-row">
+                                    <div class="today-metric">
+                                        <span class="tm-label">Temperature</span>
+                                        <span class="tm-value" id="today-temp">--°C</span>
+                                    </div>
+                                    <div class="today-metric">
+                                        <span class="tm-label">Rain Chance</span>
+                                        <span class="tm-value" id="today-rain-chance">--%</span>
+                                    </div>
+                                    <div class="today-metric">
+                                        <span class="tm-label">Water Level</span>
+                                        <span class="tm-value" id="today-water">-- cm</span>
+                                    </div>
+                                    <div class="today-metric">
+                                        <span class="tm-label">Cloud Cover</span>
+                                        <span class="tm-value" id="today-clouds">--%</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 7-Day API Forecast Cards -->
+                        <div class="panel-card forecast-days-panel" style="grid-column: span 2;">
+                            <div class="panel-header">
+                                <div class="panel-title">
+                                    <i data-lucide="calendar-days"></i>
+                                    <h3>Extended Forecast (Open-Meteo)</h3>
+                                </div>
+                                <span class="live-indicator" id="forecast-location-label">Location: --</span>
+                            </div>
+                            <div class="forecast-days-grid" id="forecast-days-container">
+                                <!-- Populated dynamically by JS -->
+                                <div class="forecast-loading">
+                                    <i data-lucide="loader-2" class="spin-icon"></i>
+                                    <span>Fetching forecast data...</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Hourly Precipitation Chart -->
+                        <div class="panel-card chart-panel" style="grid-column: span 2;">
+                            <div class="panel-header">
+                                <div class="panel-title">
+                                    <i data-lucide="trending-up"></i>
+                                    <h3>7-Day Precipitation Forecast</h3>
+                                </div>
+                            </div>
+                            <div class="chart-container">
+                                <canvas id="hourlyPrecipChart"></canvas>
+                            </div>
+                        </div>
+
+                        <div class="panel-card info-panel">
+                            <h3>Weekly Summary Report</h3>
+                            <div class="report-stats">
+                                <div class="report-item">
+                                    <span>Total Weekly Rainfall</span>
+                                    <strong id="weekly-total-rain">0.0 mm</strong>
+                                </div>
+                                <div class="report-item">
+                                    <span>Average Temperature</span>
+                                    <strong id="weekly-avg-temp">0.0 °C</strong>
+                                </div>
+                                <div class="report-item">
+                                    <span>Peak Intensity</span>
+                                    <strong id="weekly-peak-rain">0.0 mm</strong>
+                                </div>
+                                <div class="report-item">
+                                    <span>Days with Rain</span>
+                                    <strong id="weekly-rain-days">0</strong>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="panel-card prediction-panel" id="forecast-guidance-card">
+                            <div class="panel-header">
+                                <div class="panel-title">
+                                    <i data-lucide="shield-check"></i>
+                                    <h3>Model Guidance</h3>
+                                </div>
+                            </div>
+                            <div class="prediction-content">
+                                <p id="model-guidance-text">Based on current atmospheric pressure trends, the localized anticipatory network predicts stable conditions for the next 48 hours.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Mobile Bottom Nav -->
+        <nav class="mobile-bottom-bar">
+            <a href="#" class="bottom-nav-item active" data-section="home">
+                <i data-lucide="layout-grid"></i>
+                <span>Home</span>
+            </a>
+            <a href="#" class="bottom-nav-item" data-section="analytics">
+                <i data-lucide="bar-chart-2"></i>
+                <span>Trends</span>
+            </a>
+            <a href="#" class="bottom-nav-item" data-section="forecast">
+                <i data-lucide="calendar-days"></i>
+                <span>Forecast</span>
+            </a>
+            <a id="map-link-mobile" href="https://www.google.com/maps" target="_blank" class="bottom-nav-item">
+                <i data-lucide="map-pin"></i>
+                <span>Map</span>
+            </a>
+        </nav>
+    </div>
+    <script src="dashboard.js"></script>
+</body>
+</html>
