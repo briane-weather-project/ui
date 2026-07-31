@@ -691,9 +691,10 @@ async function populateHourlyTempTimeline() {
         // ── BUILD THE TIMELINE ──
         container.innerHTML = '';
 
-        // "Now" card - fallback to UI element values
-        const tempValText = document.getElementById('temp-value')?.innerText;
-        let currentTemp = parseFloat(tempValText) || 0;
+        // "Now" card - strictly rely on the current sensor value displayed in the UI
+        const tempElText = document.getElementById('temp-value')?.innerText;
+        const currentTempParsed = parseFloat(tempElText);
+        const currentTempDisplay = isNaN(currentTempParsed) ? "--" : Math.round(currentTempParsed);
 
         let currentIcon = 'sun';
         const lightText = document.getElementById('light-value')?.innerText;
@@ -710,7 +711,7 @@ async function populateHourlyTempTimeline() {
         nowCard.innerHTML = `
             <span class="hourly-time" style="color: #6366f1; font-weight: 800; display: inline-flex; align-items: center; gap: 6px;"><span class="timeline-pulse-dot"></span>Now</span>
             <div class="hourly-icon"><i data-lucide="${currentIcon}"></i></div>
-            <span class="hourly-temp">${Math.round(currentTemp)}°</span>
+            <span class="hourly-temp">${currentTempDisplay}°</span>
         `;
         container.appendChild(nowCard);
 
@@ -863,7 +864,7 @@ function startRealtimeUpdates() {
 
             updateLocationName(lat, lng);
 
-            if (tempEl) tempEl.innerText = temp !== 0 ? temp.toFixed(1) : "--.-";
+            if (tempEl) tempEl.innerText = !isNaN(temp) ? temp.toFixed(1) : "--.-";
             if (humidityEl) humidityEl.innerText = hum !== 0 ? hum.toFixed(0) : "--";
             if (pressureEl) pressureEl.innerText = pres !== 0 ? pres.toFixed(1) : "----";
 
@@ -1014,7 +1015,7 @@ function updatePredictions(temp, hum, pres, rain, light, water, pressureTrend, c
         desc = "Unstable atmospheric system producing localized precipitation.";
         icon = "cloud-rain";
         rainProb = Math.max(rainProb, 80);
-    } else if ((light !== undefined && light >= 0 && light < 6000) || (cloudCover !== undefined && cloudCover >= 50.0)) {
+    } else if (light !== undefined && light >= 0 && light < 6000) {
         prediction = "Mostly Overcast";
         desc = "Heavy cloud cover or reduced light level detected.";
         icon = "cloud";
@@ -1323,8 +1324,8 @@ function updateStatusAndRisk(dailyRain, rainRate, water, cloudCover, light) {
         const hour = new Date().getHours();
         if (hour >= 19 || hour < 5) {
             weatherType = 'night';
-        } else if ((light !== undefined && light >= 0 && light < 6000) || (cloudCover !== undefined && cloudCover >= 50.0)) {
-            weatherType = 'cloudy'; // Low light or high cloud cover during daytime = overcast sky
+        } else if (light !== undefined && light >= 0 && light < 6000) {
+            weatherType = 'cloudy'; // Strictly when light level is under 6000 lux during daytime
         } else {
             weatherType = 'sunny';
         }
