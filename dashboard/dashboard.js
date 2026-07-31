@@ -696,13 +696,32 @@ async function populateHourlyTempTimeline() {
         const currentTempParsed = parseFloat(tempElText);
         const currentTempDisplay = isNaN(currentTempParsed) ? "--" : Math.round(currentTempParsed);
 
+        // Determine accurate icon for "Now" based on current weather conditions
         let currentIcon = 'sun';
+        const rainRateText = document.getElementById('rain-rate-value')?.innerText;
+        const rainRate = parseFloat(rainRateText) || 0;
+        const waterText = document.getElementById('water-level-value')?.innerText;
+        const water = parseFloat(waterText) || 0;
         const lightText = document.getElementById('light-value')?.innerText;
         const lightVal = parseFloat(lightText) || 0;
-        if (lightVal >= 0 && lightVal < 10) currentIcon = 'moon';
-        else {
+
+        const maxChannelCapacity = physicalMountHeight * 0.8;
+
+        if (water >= maxChannelCapacity || rainRate >= 15.0) {
+            currentIcon = 'cloud-lightning'; // Stormy
+        } else if (rainRate > 0.0) {
+            currentIcon = 'cloud-rain'; // Rainy
+        } else {
             const hour = new Date().getHours();
-            if (hour >= 19 || hour < 5) currentIcon = 'moon';
+            const isDaytime = hour >= 5 && hour < 18; // 5:00 AM to 6:00 PM
+
+            if (hour >= 18 || hour < 5) {
+                currentIcon = 'moon'; // Night
+            } else if (isDaytime && lightVal >= 0 && lightVal < 6000) {
+                currentIcon = 'cloudy'; // Cloudy
+            } else {
+                currentIcon = 'sun'; // Sunny
+            }
         }
 
         const nowCard = document.createElement('div');
@@ -1315,17 +1334,14 @@ function updateStatusAndRisk(dailyRain, rainRate, water, cloudCover, light) {
         risk = `Precipitation recorded today (${dailyRain.toFixed(1)} mm). Monitoring conditions.`;
     }
 
-    // --- 2. Visual Weather Background (Based on ACTIVE rainRate mm/h & Cloud Cover) ---
-    if (water >= maxChannelCapacity || rainRate >= 15.0) {
-        weatherType = "stormy";
-    } else if (rainRate > 0.0) {
-        weatherType = "rainy";
     } else {
         const hour = new Date().getHours();
-        if (hour >= 19 || hour < 5) {
+        const isDaytime = hour >= 5 && hour < 18; // 5:00 AM to 6:00 PM
+
+        if (hour >= 18 || hour < 5) {
             weatherType = 'night';
-        } else if (light !== undefined && light >= 0 && light < 6000) {
-            weatherType = 'cloudy'; // Strictly when light level is under 6000 lux during daytime
+        } else if (isDaytime && light !== undefined && light >= 0 && light < 6000) {
+            weatherType = 'cloudy';
         } else {
             weatherType = 'sunny';
         }
