@@ -103,6 +103,14 @@ navLinks.forEach(link => {
     });
 });
 
+// Date/Time label helper for clean graph tooltips & x-axis ticks
+function formatDateTimeLabel(date) {
+    if (!date || isNaN(date.getTime())) date = new Date();
+    const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return `${dateStr}, ${timeStr}`;
+}
+
 // Charts Logic
 const ctxRain = document.getElementById('mainRainfallChart').getContext('2d');
 const chartRain = new Chart(ctxRain, {
@@ -117,6 +125,8 @@ const chartRain = new Chart(ctxRain, {
             fill: true,
             tension: 0.4,
             pointRadius: 4,
+            pointHoverRadius: 8,
+            pointHitRadius: 14,
             pointBackgroundColor: '#6366f1',
             borderWidth: 3
         }]
@@ -124,11 +134,32 @@ const chartRain = new Chart(ctxRain, {
     options: {
         responsive: true,
         maintainAspectRatio: false,
+        interaction: {
+            mode: 'nearest',
+            intersect: false
+        },
+        plugins: {
+            legend: { display: false },
+            tooltip: {
+                enabled: true,
+                backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                titleColor: '#ffffff',
+                padding: 10,
+                cornerRadius: 8
+            }
+        },
         scales: {
             y: { beginAtZero: true, grid: { color: '#f1f5f9' }, ticks: { font: { family: 'Plus Jakarta Sans', weight: '600' } } },
-            x: { grid: { display: false }, ticks: { font: { family: 'Plus Jakarta Sans', weight: '600' } } }
-        },
-        plugins: { legend: { display: false } }
+            x: {
+                grid: { display: false },
+                ticks: {
+                    maxTicksLimit: 6,
+                    maxRotation: 0,
+                    autoSkip: true,
+                    font: { family: 'Plus Jakarta Sans', weight: '600' }
+                }
+            }
+        }
     }
 });
 
@@ -143,40 +174,52 @@ const chartAtmo = new Chart(ctxAtmo, {
                 data: [],
                 borderColor: '#f97316',
                 tension: 0.4,
-                yAxisID: 'y'
+                yAxisID: 'y',
+                pointRadius: 3,
+                pointHoverRadius: 7,
+                pointHitRadius: 12
             },
             {
                 label: 'Hum (%)',
                 data: [],
                 borderColor: '#06b6d4',
                 tension: 0.4,
-                yAxisID: 'y1'
+                yAxisID: 'y1',
+                pointRadius: 3,
+                pointHoverRadius: 7,
+                pointHitRadius: 12
             }
         ]
     },
     options: {
         responsive: true,
         maintainAspectRatio: false,
+        interaction: {
+            mode: 'nearest',
+            intersect: false
+        },
+        plugins: {
+            legend: { position: 'top', labels: { font: { family: 'Plus Jakarta Sans', weight: '700' } } },
+            tooltip: {
+                enabled: true,
+                backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                titleColor: '#ffffff',
+                padding: 10,
+                cornerRadius: 8
+            }
+        },
         scales: {
             y: { type: 'linear', display: true, position: 'left', title: { display: true, text: 'Temp' } },
             y1: { type: 'linear', display: true, position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'Hum' } },
-            x: { grid: { display: false } }
-        },
-        plugins: { legend: { position: 'top', labels: { font: { family: 'Plus Jakarta Sans', weight: '700' } } } }
+            x: {
+                grid: { display: false },
+                ticks: { maxTicksLimit: 6, maxRotation: 0, autoSkip: true }
+            }
+        }
     }
 });
 
 // Detailed Charts Initialization
-const chartOptionsLarge = {
-    responsive: true,
-    maintainAspectRatio: false,
-    resizeDelay: 0, // Instant resize for smoother transitions
-    scales: {
-        y: { grid: { color: 'rgba(0,0,0,0.05)' } },
-        x: { grid: { display: false } }
-    }
-};
-
 const createDetailedChart = (id, label, color, bgColor) => {
     const canvas = document.getElementById(id);
     if (!canvas) return null;
@@ -192,10 +235,44 @@ const createDetailedChart = (id, label, color, bgColor) => {
                 backgroundColor: bgColor,
                 fill: true,
                 tension: 0.3,
-                borderWidth: 2
+                borderWidth: 2,
+                pointRadius: 3,
+                pointHoverRadius: 7,
+                pointHitRadius: 12,
+                pointBackgroundColor: color
             }]
         },
-        options: chartOptionsLarge
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            resizeDelay: 0,
+            interaction: {
+                mode: 'nearest',
+                intersect: false
+            },
+            plugins: {
+                tooltip: {
+                    enabled: true,
+                    backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                    titleColor: '#ffffff',
+                    bodyColor: '#cbd5e1',
+                    padding: 10,
+                    cornerRadius: 8,
+                    displayColors: true
+                }
+            },
+            scales: {
+                y: { grid: { color: 'rgba(0,0,0,0.05)' } },
+                x: {
+                    grid: { display: false },
+                    ticks: {
+                        maxTicksLimit: 6,
+                        maxRotation: 0,
+                        autoSkip: true
+                    }
+                }
+            }
+        }
     });
 };
 
@@ -1037,7 +1114,7 @@ async function initializeChartHistory() {
             const history = snapshot.docs.map(doc => doc.data()).reverse();
             history.forEach(data => {
                 const time = data.timestamp ? (data.timestamp.toDate ? data.timestamp.toDate() : new Date(data.timestamp)) : new Date();
-                const timeLabel = time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                const timeLabel = formatDateTimeLabel(time);
 
                 const r = parseFloat(data.rainfall) || 0;
                 const t = parseFloat(data.temperature) || 0;
@@ -1092,7 +1169,7 @@ async function initializeChartHistory() {
 
 function updateCharts(rain, temp, hum, pres, water, light) {
     const now = new Date();
-    const timeLabel = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const timeLabel = formatDateTimeLabel(now);
 
     const updateChartData = (chart, value, label) => {
         if (!chart) return;
