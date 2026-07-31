@@ -837,7 +837,7 @@ function startRealtimeUpdates() {
             const temp = parseFloat(data.temperature) || 0.0;
             const hum = parseFloat(data.humidity) || 0.0;
             const pres = parseFloat(data.pressure) || 0.0;
-            const light = data.lightLevel !== undefined ? parseFloat(data.lightLevel) : -1.0;
+            const light = data.lightLevel !== undefined ? parseFloat(data.lightLevel) : (data.light !== undefined ? parseFloat(data.light) : -1.0);
             const water = data.waterLevel !== undefined ? parseFloat(data.waterLevel) : -1.0;
             const dewPoint = data.dewPoint !== undefined ? parseFloat(data.dewPoint) : 0.0;
             const heatIndex = data.heatIndex !== undefined ? parseFloat(data.heatIndex) : 0.0;
@@ -909,7 +909,7 @@ function startRealtimeUpdates() {
                 loadOpenMeteoForecast(lat, lng);
             }
 
-            updateStatusAndRisk(dailyRain, rainRate, water, cloudCover, light);
+            updateStatusAndRisk(rain, rainRate, water, cloudCover, light);
             updatePredictions(temp, hum, pres, rain, light, water, pressureTrend, cloudCover, waterRiseRate);
             lucide.createIcons();
 
@@ -1327,8 +1327,8 @@ function updateStatusAndRisk(dailyRain, rainRate, water, cloudCover, light) {
         const hour = new Date().getHours();
         if (hour >= 19 || hour < 5) {
             weatherType = 'night';
-        } else if (light !== undefined && light >= 0 && light < 6000) {
-            weatherType = 'cloudy'; // Low light during daytime = overcast sky
+        } else if ((light !== undefined && light >= 0 && light < 6000) || (cloudCover !== undefined && cloudCover >= 50.0)) {
+            weatherType = 'cloudy'; // Low light or high cloud cover during daytime = overcast sky
         } else {
             weatherType = 'sunny';
         }
