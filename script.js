@@ -250,10 +250,12 @@ function updateWeatherBackground() {
           weatherType = "rainy";
      } else {
           const hour = new Date().getHours();
-          if (hour >= 19 || hour < 5) {
+          const isDaytime = hour >= 5 && hour < 18; // 5:00 AM to 6:00 PM
+
+          if (hour >= 18 || hour < 5) {
                weatherType = 'night';
-          } else if (currentLightVal >= 0 && currentLightVal < 6000) {
-               weatherType = 'cloudy'; // Strictly when light level is under 6000 lux during daytime
+          } else if (isDaytime && currentLightVal >= 0 && currentLightVal < 6000) {
+               weatherType = 'cloudy';
           } else {
                weatherType = 'sunny';
           }
