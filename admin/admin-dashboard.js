@@ -819,7 +819,7 @@ function updatePredictions(temp, hum, pres, rain, light, water, pressureTrend, c
         desc = "Unstable atmospheric system producing precipitation.";
         icon = "cloud-rain";
         rainProb = Math.max(rainProb, 80);
-    } else if ((light !== undefined && light >= 0 && light < 6000) || (cloudCover !== undefined && cloudCover >= 50.0)) {
+    } else if (light !== undefined && light >= 0 && light < 6000) {
         prediction = "Mostly Overcast";
         desc = "Heavy cloud cover or reduced light level detected.";
         icon = "cloud";
@@ -1035,8 +1035,8 @@ function updateWeatherBackground(rainRate, water, light) {
         const hour = new Date().getHours();
         if (hour >= 19 || hour < 5) {
             weatherType = 'night';
-        } else if ((light !== undefined && light >= 0 && light < 6000) || (currentCloudCoverVal !== undefined && currentCloudCoverVal >= 50.0)) {
-            weatherType = 'cloudy'; // Low light or high cloud cover during daytime = overcast sky
+        } else if (light !== undefined && light >= 0 && light < 6000) {
+            weatherType = 'cloudy'; // Strictly when light level is under 6000 lux during daytime
         } else {
             weatherType = 'sunny';
         }
