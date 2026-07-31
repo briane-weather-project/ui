@@ -762,7 +762,6 @@ function renderTimeline(forecastData) {
 
     lucide.createIcons();
 }
-}
 
 // Modern fix for container-based resizing
 const resizeObserver = new ResizeObserver(() => {
@@ -1121,6 +1120,7 @@ async function initializeChartHistory() {
 
     // Assume 1 data point per minute, but limit to 300 to speed up initial render
     const limitPoints = Math.min(300, (currentGraphWindow || 24) * 60);
+    try {
         const snapshot = await db.collection('weather_history')
             .orderBy('timestamp', 'desc')
             .limit(limitPoints)
