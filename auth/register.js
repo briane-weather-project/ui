@@ -191,6 +191,7 @@ let alertThresholdVal = 50.0;
 let currentRainRateVal = 0.0;
 let currentWaterVal = -1.0;
 let currentCloudCoverVal = 0.0;
+let currentLightVal = -1.0;
 
 function syncWeatherBackground() {
      // Safety timeout
@@ -212,9 +213,15 @@ function syncWeatherBackground() {
      db.collection('weather').doc('current').onSnapshot(doc => {
           if (doc.exists) {
                const data = doc.data();
+               const light = data.lightLevel !== undefined ? parseFloat(data.lightLevel) : -1.0;
                currentRainRateVal = data.rainRate !== undefined ? parseFloat(data.rainRate) : 0.0;
                currentWaterVal = data.waterLevel !== undefined ? parseFloat(data.waterLevel) : -1.0;
-               currentCloudCoverVal = data.cloudCover !== undefined ? parseFloat(data.cloudCover) : 0.0;
+               currentLightVal = light;
+               let cc = data.cloudCover !== undefined ? parseFloat(data.cloudCover) : 0.0;
+               if ((data.cloudCover === undefined || cc === 0) && light >= 0) {
+                    cc = (1.0 - Math.min(1.0, light / 65000.0)) * 100.0;
+               }
+               currentCloudCoverVal = cc;
                updateWeatherBackground();
           } else {
                updateWeatherBackground();
@@ -233,8 +240,8 @@ function updateWeatherBackground() {
           const hour = new Date().getHours();
           if (hour >= 19 || hour < 5) {
                weatherType = 'night';
-          } else if (currentCloudCoverVal >= 70.0) {
-               weatherType = 'cloudy';
+          } else if (currentLightVal >= 0 && currentLightVal < 6000) {
+               weatherType = 'cloudy'; // Low light during daytime = overcast sky
           } else {
                weatherType = 'sunny';
           }
