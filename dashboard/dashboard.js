@@ -892,17 +892,12 @@ function startRealtimeUpdates() {
             }
 
             const lastSeen = data.lastSeen;
-            let lastSeenStr = "";
-            if (lastSeen) {
-                const lastSeenDate = (typeof lastSeen === 'string') ? new Date(lastSeen) : (lastSeen.toDate ? lastSeen.toDate() : new Date(lastSeen));
-                lastSeenStr = lastSeenDate.toISOString();
-                const diffMinutes = (new Date() - lastSeenDate) / 1000 / 60;
-                // Station sleeps for 10 minutes between uploads, so 15 min threshold prevents false "Device Offline" during sleep
-                if (diffMinutes < 15) updateStatusUI("System Active", "#10b981", true);
-                else updateStatusUI("Device Offline", "#ef4444", false);
-            } else {
-                updateStatusUI("Disconnected", "#94a3b8", false);
-            }
+            const lastSeenDate = lastSeen ? (typeof lastSeen === 'string' ? new Date(lastSeen) : (lastSeen.toDate ? lastSeen.toDate() : new Date(lastSeen))) : new Date();
+            const lastSeenStr = lastSeenDate.toISOString();
+            const diffMinutes = (new Date() - lastSeenDate) / 1000 / 60;
+            // Station sleeps for 10 minutes between uploads, so 15 min threshold prevents false "Device Offline" during sleep
+            if (diffMinutes < 15) updateStatusUI("System Active", "#10b981", true);
+            else updateStatusUI("Device Offline", "#ef4444", false);
 
             // Auto load/update forecast if board location changed and coordinates are valid
             if (lat !== 0 && lng !== 0 && (lat !== loadedForecastLatitude || lng !== loadedForecastLongitude)) {
@@ -1019,9 +1014,9 @@ function updatePredictions(temp, hum, pres, rain, light, water, pressureTrend, c
         desc = "Unstable atmospheric system producing localized precipitation.";
         icon = "cloud-rain";
         rainProb = Math.max(rainProb, 80);
-    } else if (cloudCover > 70 && light >= 10) {
+    } else if ((light !== undefined && light >= 0 && light < 6000) || (cloudCover !== undefined && cloudCover >= 50.0)) {
         prediction = "Mostly Overcast";
-        desc = "Heavy cloud cover detected via reduced light intensity.";
+        desc = "Heavy cloud cover or reduced light level detected.";
         icon = "cloud";
         rainProb = Math.max(rainProb, 45);
     } else if (temp > 33 && hum < 55) {
@@ -1125,8 +1120,8 @@ async function initializeChartHistory() {
                 const t = parseFloat(data.temperature) || 0;
                 const h = parseFloat(data.humidity) || 0;
                 const p = parseFloat(data.pressure) || 0;
-                const w = parseFloat(data.waterLevel) !== undefined ? parseFloat(data.waterLevel) : 0;
-                const l = parseFloat(data.lightLevel) !== undefined ? parseFloat(data.lightLevel) : 0;
+                const w = (data.waterLevel !== undefined ? parseFloat(data.waterLevel) : (data.water !== undefined ? parseFloat(data.water) : 0.0)) || 0.0;
+                const l = (data.lightLevel !== undefined ? parseFloat(data.lightLevel) : (data.light !== undefined ? parseFloat(data.light) : 0.0)) || 0.0;
 
                 if (chartRain) {
                     chartRain.data.labels.push(timeLabel);
@@ -1189,6 +1184,7 @@ function updateCharts(rain, temp, hum, pres, water, light) {
     };
 
     updateChartData(chartRain, rain, timeLabel);
+    updateChartData(detailedRainChart, rain, timeLabel);
     updateChartData(detailedTempChart, temp, timeLabel);
     updateChartData(detailedHumChart, hum, timeLabel);
     updateChartData(detailedPresChart, pres, timeLabel);
