@@ -942,7 +942,6 @@ const adminEmailDisplay = document.getElementById('admin-display-email');
 const simResponseText = document.getElementById('sim-response');
 const simLastCheckText = document.getElementById('sim-last-check');
 const simExpiryAlert = document.getElementById('sim-expiry-alert');
-const simQuickStatus = document.getElementById('sim-quick-status');
 
 // Navigation Logic (Unified for Sidebar and Bottom Nav)
 const navLinks = document.querySelectorAll('.nav-item, .nav-btn');
@@ -1325,12 +1324,6 @@ function loadDashboardData() {
             const statusStr = data.status || "No report";
             if (simResponseText) simResponseText.innerText = statusStr;
             if (simLastCheckText) simLastCheckText.innerText = data.lastCheck || "--";
-
-            // Extract Balance for Quick Status
-            if (simQuickStatus) {
-                const balanceMatch = statusStr.match(/P?(\d+\.\d{2})/);
-                simQuickStatus.innerText = balanceMatch ? `PHP ${balanceMatch[1]}` : (statusStr.length > 15 ? "Active" : statusStr);
-            }
 
             const lowerStatus = statusStr.toLowerCase();
             if (simExpiryAlert) {
