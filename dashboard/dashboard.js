@@ -842,8 +842,11 @@ function startRealtimeUpdates() {
             const dewPoint = data.dewPoint !== undefined ? parseFloat(data.dewPoint) : 0.0;
             const heatIndex = data.heatIndex !== undefined ? parseFloat(data.heatIndex) : 0.0;
             const rainRate = data.rainRate !== undefined ? parseFloat(data.rainRate) : 0.0;
-            const rainIntensity = data.rainIntensity || 'None';
-            const cloudCover = data.cloudCover !== undefined ? parseFloat(data.cloudCover) : 0.0;
+            let cloudCover = data.cloudCover !== undefined ? parseFloat(data.cloudCover) : 0.0;
+            if ((data.cloudCover === undefined || cloudCover === 0) && light >= 0) {
+                const ratio = Math.min(1.0, light / maxClearSkyLux);
+                cloudCover = (1.0 - ratio) * 100.0;
+            }
             const pressureTrend = data.pressureTrend !== undefined ? parseFloat(data.pressureTrend) : 0.0;
             const waterRiseRate = data.waterRiseRate !== undefined ? parseFloat(data.waterRiseRate) : 0.0;
 
@@ -905,7 +908,7 @@ function startRealtimeUpdates() {
                 loadOpenMeteoForecast(lat, lng);
             }
 
-            updateStatusAndRisk(dailyRain, rainRate, water, cloudCover);
+            updateStatusAndRisk(dailyRain, rainRate, water, cloudCover, light);
             updatePredictions(temp, hum, pres, rain, light, water, pressureTrend, cloudCover, waterRiseRate);
             lucide.createIcons();
 
@@ -1105,9 +1108,10 @@ async function initializeChartHistory() {
     });
 
     try {
+        const limitPoints = (currentGraphWindow || 24) * 60;
         const snapshot = await db.collection('weather_history')
             .orderBy('timestamp', 'desc')
-            .limit(20)
+            .limit(limitPoints)
             .get();
 
         if (!snapshot.empty) {
@@ -1170,12 +1174,13 @@ async function initializeChartHistory() {
 function updateCharts(rain, temp, hum, pres, water, light) {
     const now = new Date();
     const timeLabel = formatDateTimeLabel(now);
+    const maxPoints = (currentGraphWindow || 24) * 60;
 
     const updateChartData = (chart, value, label) => {
         if (!chart) return;
         chart.data.labels.push(label);
         chart.data.datasets[0].data.push(value);
-        if (chart.data.labels.length > 20) {
+        if (chart.data.labels.length > maxPoints) {
             chart.data.labels.shift();
             chart.data.datasets[0].data.shift();
         }
@@ -1279,7 +1284,7 @@ async function fetchAdminConfig() {
     });
 }
 
-function updateStatusAndRisk(dailyRain, rainRate, water, cloudCover) {
+function updateStatusAndRisk(dailyRain, rainRate, water, cloudCover, light) {
     let status = "Safe";
     let badgeClass = "risk-badge safe";
     let risk = "Conditions are stable. Sensors reporting normal levels.";
@@ -1321,8 +1326,8 @@ function updateStatusAndRisk(dailyRain, rainRate, water, cloudCover) {
         const hour = new Date().getHours();
         if (hour >= 19 || hour < 5) {
             weatherType = 'night';
-        } else if (cloudCover !== undefined && cloudCover >= 70.0) {
-            weatherType = 'cloudy'; // High cloud cover during daytime
+        } else if (light !== undefined && light >= 0 && light < 6000) {
+            weatherType = 'cloudy'; // Low light during daytime = overcast sky
         } else {
             weatherType = 'sunny';
         }
