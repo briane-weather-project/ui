@@ -429,7 +429,6 @@ function renderTimeline(forecastData) {
 
     lucide.createIcons();
 }
-}
 
 async function loadWeeklyData() {
     const canvas = document.getElementById('weeklyRainChart');
