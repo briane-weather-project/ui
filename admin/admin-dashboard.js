@@ -303,131 +303,146 @@ function parseFirestoreTimestamp(timestamp) {
     return isNaN(date.getTime()) ? new Date() : date;
 }
 
-let lastForecastFetch = 0;
-let cachedForecastData = null;
-
 async function populateHourlyTempTimeline() {
     const container = document.getElementById('hourly-temp-timeline');
     if (!container) return;
 
-    const nowTime = Date.now();
-    // Cache forecast data for 30 minutes to improve performance and prevent rendering lag
-    if (cachedForecastData && (nowTime - lastForecastFetch < 30 * 60 * 1000)) {
-        renderTimeline(cachedForecastData);
-        return;
-    }
+    console.log("Timeline: Starting update...");
 
     try {
+        // ── PART 1: Fetch Future forecast ──
+        console.log("Timeline: Fetching forecast...");
+
         const lat = currentLatitude || 14.5995;
         const lng = currentLongitude || 120.9842;
         const forecastRes = await fetch(
             `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&hourly=temperature_2m,weathercode,is_day&timezone=auto&forecast_hours=24`
-        );
-        cachedForecastData = await forecastRes.json();
-        lastForecastFetch = nowTime;
-        renderTimeline(cachedForecastData);
-    } catch (err) {
-        console.error("Error loading hourly timeline:", err);
-        renderTimeline(null);
-    }
-}
+        ).catch(err => {
+            console.error("Timeline: Open-Meteo fetch error:", err);
+            return null;
+        });
 
-function renderTimeline(forecastData) {
-    const container = document.getElementById('hourly-temp-timeline');
-    if (!container) return;
+        const forecastData = forecastRes ? await forecastRes.json() : null;
 
-    // Process future entries
-    const futureEntries = [];
-    const weatherCodeIcons = {
-        0: { day: 'sun', night: 'moon' },
-        1: { day: 'cloudy', night: 'cloud-moon' },
-        2: { day: 'cloudy', night: 'cloud-moon' },
-        3: { day: 'cloudy', night: 'cloud-moon' },
-        45: { day: 'cloud', night: 'cloud' },
-        48: { day: 'cloud', night: 'cloud' },
-        51: { day: 'cloud-drizzle', night: 'cloud-drizzle' },
-        53: { day: 'cloud-drizzle', night: 'cloud-drizzle' },
-        55: { day: 'cloud-drizzle', night: 'cloud-drizzle' },
-        61: { day: 'cloud-rain', night: 'cloud-rain' },
-        63: { day: 'cloud-rain', night: 'cloud-rain' },
-        65: { day: 'cloud-rain', night: 'cloud-rain' },
-        80: { day: 'cloud-rain', night: 'cloud-rain' },
-        81: { day: 'cloud-rain', night: 'cloud-rain' },
-        82: { day: 'cloud-rain', night: 'cloud-rain' },
-        95: { day: 'cloud-lightning', night: 'cloud-lightning' },
-        96: { day: 'cloud-lightning', night: 'cloud-lightning' },
-        99: { day: 'cloud-lightning', night: 'cloud-lightning' }
-    };
+        console.log("Timeline: Processing forecast data...");
 
-    if (forecastData && forecastData.hourly) {
-        const now = new Date();
-        for (let i = 0; i < forecastData.hourly.time.length; i++) {
-            const forecastTime = new Date(forecastData.hourly.time[i]);
-            if (forecastTime > now) {
-                futureEntries.push({
-                    time: forecastTime,
-                    temp: forecastData.hourly.temperature_2m[i],
-                    weatherCode: forecastData.hourly.weathercode ? forecastData.hourly.weathercode[i] : 0,
-                    isDay: forecastData.hourly.is_day ? forecastData.hourly.is_day[i] === 1 : true
-                });
-                if (futureEntries.length >= 12) break;
+        // Process future entries
+        const futureEntries = [];
+        const weatherCodeIcons = {
+            0: { day: 'sun', night: 'moon' },
+            1: { day: 'cloudy', night: 'cloud-moon' },
+            2: { day: 'cloudy', night: 'cloud-moon' },
+            3: { day: 'cloudy', night: 'cloud-moon' },
+            45: { day: 'cloud', night: 'cloud' },
+            48: { day: 'cloud', night: 'cloud' },
+            51: { day: 'cloud-drizzle', night: 'cloud-drizzle' },
+            53: { day: 'cloud-drizzle', night: 'cloud-drizzle' },
+            55: { day: 'cloud-drizzle', night: 'cloud-drizzle' },
+            61: { day: 'cloud-rain', night: 'cloud-rain' },
+            63: { day: 'cloud-rain', night: 'cloud-rain' },
+            65: { day: 'cloud-rain', night: 'cloud-rain' },
+            80: { day: 'cloud-rain', night: 'cloud-rain' },
+            81: { day: 'cloud-rain', night: 'cloud-rain' },
+            82: { day: 'cloud-rain', night: 'cloud-rain' },
+            95: { day: 'cloud-lightning', night: 'cloud-lightning' },
+            96: { day: 'cloud-lightning', night: 'cloud-lightning' },
+            99: { day: 'cloud-lightning', night: 'cloud-lightning' }
+        };
+
+        if (forecastData && forecastData.hourly) {
+            const now = new Date();
+            for (let i = 0; i < forecastData.hourly.time.length; i++) {
+                const forecastTime = new Date(forecastData.hourly.time[i]);
+                if (forecastTime > now) {
+                    futureEntries.push({
+                        time: forecastTime,
+                        temp: forecastData.hourly.temperature_2m[i],
+                        weatherCode: forecastData.hourly.weathercode ? forecastData.hourly.weathercode[i] : 0,
+                        isDay: forecastData.hourly.is_day ? forecastData.hourly.is_day[i] === 1 : true,
+                        isPredicted: true
+                    });
+                    if (futureEntries.length >= 12) break;
+                }
             }
         }
-    }
+        console.log(`Timeline: Processed ${futureEntries.length} future predicted entries`);
 
-    container.innerHTML = '';
+        // ── BUILD THE TIMELINE ──
+        container.innerHTML = '';
 
-    // "Now" card
-    const tempValText = document.getElementById('temp-summary')?.innerText;
-    const currentTempParsed = parseFloat(tempValText);
-    const currentTempDisplay = (isNaN(currentTempParsed) || tempValText === "--.-") ? "--" : Math.round(currentTempParsed);
+        // "Now" card - fallback to UI element values
+        const tempValText = document.getElementById('temp-summary')?.innerText;
+        let currentTemp = parseFloat(tempValText) || 0;
 
-    let currentIcon = 'sun';
-    const rainRateText = document.getElementById('rain-rate-summary')?.innerText;
-    const rainRate = parseFloat(rainRateText) || 0;
-    const waterText = document.getElementById('water-summary')?.innerText;
-    const water = parseFloat(waterText) || 0;
-    const lightText = document.getElementById('light-summary')?.innerText;
-    const lightVal = parseFloat(lightText) || 0;
-    const maxCapacity = physicalMountHeight * 0.8;
+        // Determine accurate icon for "Now" based on current weather conditions
+        let currentIcon = 'sun';
+        const rainRateText = document.getElementById('rain-rate-summary')?.innerText;
+        const rainRate = parseFloat(rainRateText) || 0;
+        const waterText = document.getElementById('water-summary')?.innerText;
+        const water = parseFloat(waterText) || 0;
+        const lightText = document.getElementById('light-summary')?.innerText;
+        const lightVal = parseFloat(lightText) || 0;
 
-    if (water >= maxCapacity || rainRate >= 15.0) currentIcon = 'cloud-lightning';
-    else if (rainRate > 0.0) currentIcon = 'cloud-rain';
-    else {
-        const hour = new Date().getHours();
-        const isDaytime = hour >= 5 && hour < 18;
-        if (hour >= 18 || hour < 5) currentIcon = 'moon';
-        else if (isDaytime && lightVal >= 0 && lightVal < 6000) currentIcon = 'cloudy';
-        else currentIcon = 'sun';
-    }
+        const maxCapacity = physicalMountHeight * 0.8;
 
-    const nowCard = document.createElement('div');
-    nowCard.className = 'hourly-item is-now';
-    nowCard.id = 'timeline-now-card';
-    nowCard.innerHTML = `
-        <span class="hourly-time" style="color: #6366f1; font-weight: 800; display: inline-flex; align-items: center; gap: 6px;"><span class="timeline-pulse-dot"></span>Now</span>
-        <div class="hourly-icon"><i data-lucide="${currentIcon}"></i></div>
-        <span class="hourly-temp">${currentTempDisplay}°</span>
-    `;
-    container.appendChild(nowCard);
+        if (water >= maxCapacity || rainRate >= 15.0) {
+            currentIcon = 'cloud-lightning'; // Stormy
+        } else if (rainRate > 0.0) {
+            currentIcon = 'cloud-rain'; // Rainy
+        } else {
+            const hour = new Date().getHours();
+            const isDaytime = hour >= 5 && hour < 18; // 5:00 AM to 6:00 PM
 
-    futureEntries.forEach(entry => {
-        const label = entry.time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        let iconName = 'sun';
-        const iconConfig = weatherCodeIcons[entry.weatherCode];
-        if (iconConfig) iconName = entry.isDay ? iconConfig.day : iconConfig.night;
+            if (hour >= 18 || hour < 5) {
+                currentIcon = 'moon'; // Night
+            } else if (isDaytime && lightVal >= 0 && lightVal < 6000) {
+                currentIcon = 'cloudy'; // Cloudy
+            } else {
+                currentIcon = 'sun'; // Sunny
+            }
+        }
 
-        const card = document.createElement('div');
-        card.className = 'hourly-item hourly-predicted';
-        card.innerHTML = `
-            <span class="hourly-time">${label}</span>
-            <div class="hourly-icon"><i data-lucide="${iconName}"></i></div>
-            <span class="hourly-temp">${Math.round(entry.temp)}°</span>
+        const nowCard = document.createElement('div');
+        nowCard.className = 'hourly-item is-now';
+        nowCard.id = 'timeline-now-card';
+        nowCard.innerHTML = `
+            <span class="hourly-time" style="color: #6366f1; font-weight: 800; display: inline-flex; align-items: center; gap: 6px;"><span class="timeline-pulse-dot"></span>Now</span>
+            <div class="hourly-icon"><i data-lucide="${currentIcon}"></i></div>
+            <span class="hourly-temp">${Math.round(currentTemp)}°</span>
         `;
-        container.appendChild(card);
-    });
+        container.appendChild(nowCard);
 
-    lucide.createIcons();
+        // Render future predicted entries
+        futureEntries.forEach(entry => {
+            const label = entry.time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            const iconConfig = weatherCodeIcons[entry.weatherCode];
+            let iconName = 'sun';
+            if (iconConfig) {
+                iconName = entry.isDay ? iconConfig.day : iconConfig.night;
+            }
+            const card = document.createElement('div');
+            card.className = 'hourly-item hourly-predicted';
+            card.innerHTML = `
+                <span class="hourly-time">${label}</span>
+                <div class="hourly-icon"><i data-lucide="${iconName}"></i></div>
+                <span class="hourly-temp">${Math.round(entry.temp)}°</span>
+            `;
+            container.appendChild(card);
+        });
+
+        lucide.createIcons();
+
+        // Auto-scroll to "Now" card (it's the first one now)
+        const nowEl = document.getElementById('timeline-now-card');
+        if (nowEl) {
+            container.scrollLeft = 0;
+        }
+
+        console.log("Timeline: Successfully loaded and updated UI");
+    } catch (err) {
+        console.error("Error loading hourly timeline:", err);
+        container.innerHTML = '<div class="forecast-loading"><span>Failed to load timeline</span></div>';
+    }
 }
 
 async function loadWeeklyData() {
@@ -669,8 +684,8 @@ async function initializeChartHistory() {
         }
     });
 
-    // Assume 1 data point per minute, but limit to 300 to speed up initial render
-    const limitPoints = Math.min(300, currentGraphWindow * 60);
+    // Assume 1 data point per minute, so window hours * 60
+    const limitPoints = currentGraphWindow * 60;
 
     try {
         const snapshot = await db.collection('weather_history')
