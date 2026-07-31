@@ -9,6 +9,22 @@ let maxClearSkyLux = 65000;
 let standardBasePressure = 1013;
 let lastSeenTimestamp = null;
 
+let weeklyRainChart = null;
+let hourlyPrecipChart = null;
+let currentLatitude = 0.0;
+let currentLongitude = 0.0;
+let loadedForecastLatitude = null;
+let loadedForecastLongitude = null;
+
+let currentRainfallVal = 0.0;
+let currentRainRateVal = 0.0;
+let currentWaterVal = -1.0;
+let currentCloudCoverVal = 0.0;
+let currentLightVal = -1.0;
+
+let historyInitialized = false;
+let lastProcessedTime = null;
+
 // Initialize Lucide Icons
 lucide.createIcons();
 
@@ -115,13 +131,6 @@ const detailedPresChart = createDetailedChart('detailedPresChart', 'Pressure (hP
 const detailedRainChart = createDetailedChart('detailedRainChart', 'Rainfall (mm)', '#6366f1', 'rgba(99, 102, 241, 0.05)');
 const detailedWaterChart = createDetailedChart('detailedWaterChart', 'Water Level (cm)', '#0d9488', 'rgba(13, 148, 136, 0.05)');
 const detailedLightChart = createDetailedChart('detailedLightChart', 'Light Intensity (lux)', '#eab308', 'rgba(234, 179, 8, 0.05)');
-
-let weeklyRainChart = null;
-let hourlyPrecipChart = null;
-let currentLatitude = 0.0;
-let currentLongitude = 0.0;
-let loadedForecastLatitude = null;
-let loadedForecastLongitude = null;
 
 async function loadOpenMeteoForecast(lat, lng) {
     if (lat === 0 || lng === 0) return;
@@ -668,9 +677,6 @@ const resizeObserver = new ResizeObserver(() => {
 const scrollArea = document.querySelector('.scroll-area');
 if (scrollArea) resizeObserver.observe(scrollArea);
 
-let historyInitialized = false;
-let lastProcessedTime = null;
-
 async function initializeChartHistory() {
     const allCharts = [detailedTempChart, detailedHumChart, detailedPresChart, detailedRainChart, detailedWaterChart, detailedLightChart, atmosphericChart, chartRain];
 
@@ -960,10 +966,6 @@ const maintenanceToggle = document.getElementById('maintenance-toggle');
 const saveAlertBtn = document.getElementById('save-alert-config-btn');
 const triggerManualSmsBtn = document.getElementById('trigger-manual-sms-btn');
 
-// Dynamic variables moved to top for better scoping
-let currentGraphTension = 0.3;
-let currentGraphWindow = 12;
-
 const logsContainer = document.getElementById('logs-container');
 const clearLogsBtn = document.getElementById('clear-logs-btn');
 const adminEmailDisplay = document.getElementById('admin-display-email');
@@ -1044,13 +1046,6 @@ auth.onAuthStateChanged(async (user) => {
         window.location.href = "index.html";
     }
 });
-
-let alertThresholdVal = 50.0;
-let currentRainfallVal = 0.0;
-let currentRainRateVal = 0.0;
-let currentWaterVal = -1.0;
-let currentCloudCoverVal = 0.0;
-let currentLightVal = -1.0;
 
 function updateWeatherBackground(rainRate, water, light) {
     let weatherType = "sunny";
