@@ -123,7 +123,7 @@ function formatDateTimeLabel(date) {
 }
 
 // Charts Logic
-const ctxRain = document.getElementById('mainRainfallChart').getContext('2d');
+const ctxRain = document.getElementById('mainRainfallChart')?.getContext('2d');
 const chartRain = new Chart(ctxRain, {
     type: 'line',
     data: {
@@ -174,7 +174,7 @@ const chartRain = new Chart(ctxRain, {
     }
 });
 
-const ctxAtmo = document.getElementById('atmosphericChart').getContext('2d');
+const ctxAtmo = document.getElementById('atmosphericChart')?.getContext('2d');
 const chartAtmo = new Chart(ctxAtmo, {
     type: 'line',
     data: {
@@ -915,7 +915,7 @@ function startRealtimeUpdates() {
             refreshSystemStatus();
 
             // Auto load/update forecast if board location changed and coordinates are valid
-            if (lat !== 0 && lng !== 0 && (lat !== loadedForecastLatitude || lng !== loadedForecastLongitude)) {
+            if (lat !== 0 && lng !== 0 && (lat.toFixed(3) !== loadedForecastLatitude || lng.toFixed(3) !== loadedForecastLongitude)) {
                 loadOpenMeteoForecast(lat, lng);
             }
 
@@ -1212,7 +1212,7 @@ function updateCharts(rain, temp, hum, pres, water, light) {
         chartAtmo.data.labels.push(timeLabel);
         chartAtmo.data.datasets[0].data.push(temp);
         chartAtmo.data.datasets[1].data.push(hum);
-        if (chartAtmo.data.labels.length > 20) {
+        if (chartAtmo.data.labels.length > maxPoints) {
             chartAtmo.data.labels.shift();
             chartAtmo.data.datasets[0].data.shift();
             chartAtmo.data.datasets[1].data.shift();
@@ -1249,7 +1249,7 @@ function refreshSystemStatus() {
 setInterval(refreshSystemStatus, 30000);
 
 // Dynamic baselines from Firebase moved to top for better scoping
-async function fetchAdminConfig() {
+function fetchAdminConfig() {
     db.collection('weather').doc('config').onSnapshot(doc => {
         if (doc.exists) {
             const data = doc.data();
