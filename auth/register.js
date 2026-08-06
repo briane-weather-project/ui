@@ -96,18 +96,21 @@ sendCodeBtn.addEventListener('click', async () => {
           sendCodeBtn.classList.add('loading');
           sendCodeBtn.disabled = true;
 
-          // 1. Check if Email is already in Firestore
-          const emailCheck = await db.collection('users').where('email', '==', email).get();
-          if (!emailCheck.empty) {
-               showError("This email is already registered.");
-               return;
-          }
+          // 1. Check if Email or Phone Number is already in Firestore (non-blocking if Firestore rules restrict unauthenticated reads)
+          try {
+               const emailCheck = await db.collection('users').where('email', '==', email).get();
+               if (!emailCheck.empty) {
+                    showError("This email is already registered.");
+                    return;
+               }
 
-          // 2. Check if Phone Number is already in Firestore
-          const phoneCheck = await db.collection('users').where('phoneNumber', '==', phoneNumber).get();
-          if (!phoneCheck.empty) {
-               showError("This phone number is already registered.");
-               return;
+               const phoneCheck = await db.collection('users').where('phoneNumber', '==', phoneNumber).get();
+               if (!phoneCheck.empty) {
+                    showError("This phone number is already registered.");
+                    return;
+               }
+          } catch (dbError) {
+               console.warn("Pre-registration Firestore check skipped (unauthenticated read restricted):", dbError);
           }
 
           // Re-initialize reCAPTCHA if it was cleared or expired
@@ -137,12 +140,15 @@ sendCodeBtn.addEventListener('click', async () => {
                case 'auth/quota-exceeded': msg = "SMS quota exceeded. Please try again later."; break;
                case 'auth/missing-phone-number': msg = "Please enter a phone number."; break;
                case 'auth/network-request-failed': msg = "Network error. Check your internet connection."; break;
-               case 'auth/internal-error': msg = "Something went wrong. Please refresh the page and try again."; break;
+               case 'auth/unauthorized-domain': msg = "Domain not authorized. Please add briane-weather-project.github.io under Firebase Console > Authentication > Settings > Authorized domains."; break;
+               case 'auth/operation-not-allowed': msg = "Phone Auth is disabled. Please enable Phone sign-in in Firebase Console > Authentication > Sign-in method."; break;
+               case 'auth/internal-error': 
+                    msg = error.message ? error.message.replace("Firebase: ", "") : "Firebase Auth internal error. Check Firebase Authorized Domains and Phone Auth configuration."; 
+                    break;
                default:
-                    // Show the actual Firebase error instead of masking it
                     msg = error.message ? error.message.replace("Firebase: ", "").split(" (")[0] : "An unexpected error occurred.";
                     if (!msg || msg === "Error" || msg.trim() === "") {
-                         msg = "Something went wrong. Please refresh the page and try again.";
+                         msg = "Something went wrong (" + (error.code || "unknown") + "). Please refresh and try again.";
                     }
           }
 
