@@ -9,22 +9,6 @@ let maxClearSkyLux = 65000;
 let standardBasePressure = 1013;
 let lastSeenTimestamp = null;
 
-let weeklyRainChart = null;
-let hourlyPrecipChart = null;
-let currentLatitude = 0.0;
-let currentLongitude = 0.0;
-let loadedForecastLatitude = null;
-let loadedForecastLongitude = null;
-
-let currentRainfallVal = 0.0;
-let currentRainRateVal = 0.0;
-let currentWaterVal = -1.0;
-let currentCloudCoverVal = 0.0;
-let currentLightVal = -1.0;
-
-let historyInitialized = false;
-let lastProcessedTime = null;
-
 // Initialize Lucide Icons
 lucide.createIcons();
 
@@ -132,6 +116,13 @@ const detailedRainChart = createDetailedChart('detailedRainChart', 'Rainfall (mm
 const detailedWaterChart = createDetailedChart('detailedWaterChart', 'Water Level (cm)', '#0d9488', 'rgba(13, 148, 136, 0.05)');
 const detailedLightChart = createDetailedChart('detailedLightChart', 'Light Intensity (lux)', '#eab308', 'rgba(234, 179, 8, 0.05)');
 
+let weeklyRainChart = null;
+let hourlyPrecipChart = null;
+let currentLatitude = 0.0;
+let currentLongitude = 0.0;
+let loadedForecastLatitude = null;
+let loadedForecastLongitude = null;
+
 async function loadOpenMeteoForecast(lat, lng) {
     if (lat === 0 || lng === 0) return;
 
@@ -219,7 +210,7 @@ async function loadOpenMeteoForecast(lat, lng) {
         renderWeeklyForecastChart(data.daily);
 
         // Populate Today's Hourly Temperature Timeline
-        populateHourlyTempTimeline(data.hourly);
+        populateHourlyTempTimeline();
 
         lucide.createIcons();
     } catch (err) {
@@ -677,6 +668,9 @@ const resizeObserver = new ResizeObserver(() => {
 const scrollArea = document.querySelector('.scroll-area');
 if (scrollArea) resizeObserver.observe(scrollArea);
 
+let historyInitialized = false;
+let lastProcessedTime = null;
+
 async function initializeChartHistory() {
     const allCharts = [detailedTempChart, detailedHumChart, detailedPresChart, detailedRainChart, detailedWaterChart, detailedLightChart, atmosphericChart, chartRain];
 
@@ -709,8 +703,8 @@ async function initializeChartHistory() {
                 const t = parseFloat(data.temperature) || 0;
                 const h = parseFloat(data.humidity) || 0;
                 const p = parseFloat(data.pressure) || 0;
-                const w = parseFloat(data.waterLevel) !== undefined ? parseFloat(data.waterLevel) : 0;
-                const l = parseFloat(data.lightLevel) !== undefined ? parseFloat(data.lightLevel) : 0;
+                const w = !isNaN(parseFloat(data.waterLevel)) ? parseFloat(data.waterLevel) : 0;
+                const l = !isNaN(parseFloat(data.lightLevel)) ? parseFloat(data.lightLevel) : 0;
 
                 if (detailedTempChart) {
                     detailedTempChart.data.labels.push(timeLabel);
@@ -966,6 +960,8 @@ const maintenanceToggle = document.getElementById('maintenance-toggle');
 const saveAlertBtn = document.getElementById('save-alert-config-btn');
 const triggerManualSmsBtn = document.getElementById('trigger-manual-sms-btn');
 
+
+
 const logsContainer = document.getElementById('logs-container');
 const clearLogsBtn = document.getElementById('clear-logs-btn');
 const adminEmailDisplay = document.getElementById('admin-display-email');
@@ -1047,6 +1043,13 @@ auth.onAuthStateChanged(async (user) => {
     }
 });
 
+
+let currentRainfallVal = 0.0;
+let currentRainRateVal = 0.0;
+let currentWaterVal = -1.0;
+let currentCloudCoverVal = 0.0;
+let currentLightVal = -1.0;
+
 function updateWeatherBackground(rainRate, water, light) {
     let weatherType = "sunny";
 
@@ -1105,7 +1108,14 @@ function loadDashboardData() {
 
             if (lastSeenDate && !isNaN(lastSeenDate.getTime())) {
                 lastSeenStr = lastSeenDate.toISOString();
-                refreshSystemStatus();
+                const diffMinutes = (new Date() - lastSeenDate) / 1000 / 60;
+
+                // 15-minute threshold accounts for 10-minute deep sleep interval without false "OFFLINE" warnings
+                if (diffMinutes < 15) {
+                    updateStatusUI("ONLINE", "#10b981", true);
+                } else {
+                    updateStatusUI("OFFLINE", "#ef4444", false);
+                }
             } else {
                 updateStatusUI("NO DATA", "#94a3b8", false);
             }
@@ -1125,7 +1135,7 @@ function loadDashboardData() {
             currentLongitude = lng;
 
             // Auto load/update forecast if board location changed and coordinates are valid
-            if (lat !== 0 && lng !== 0 && (lat !== loadedForecastLatitude || lng !== loadedForecastLongitude)) {
+            if (lat !== 0 && lng !== 0 && (lat.toFixed(3) !== loadedForecastLatitude || lng.toFixed(3) !== loadedForecastLongitude)) {
                 loadOpenMeteoForecast(lat, lng);
             }
 
@@ -1444,7 +1454,8 @@ function updateStatusUI(text, color, isOnline) {
     }
 }
 
-function refreshSystemStatus() {
+// Heartbeat Monitor - Force status check every 30 seconds
+setInterval(() => {
     if (!lastSeenTimestamp) return;
     const diffMinutes = (new Date() - lastSeenTimestamp) / 1000 / 60;
     if (diffMinutes >= 15) {
@@ -1452,10 +1463,7 @@ function refreshSystemStatus() {
     } else {
         updateStatusUI("ONLINE", "#10b981", true);
     }
-}
-
-// Heartbeat Monitor - Force status check every 30 seconds
-setInterval(refreshSystemStatus, 30000);
+}, 30000);
 
 // Actions
 if (updateThresholdBtn) {
