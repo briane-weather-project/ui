@@ -51,9 +51,20 @@ function clearError() {
 }
 
 // Initialize ReCAPTCHA (Invisible)
-window.recaptchaVerifier = new firebase.auth.RecaptchaVerifier('recaptcha-container', {
-     'size': 'invisible'
-});
+function initRecaptcha() {
+     if (window.recaptchaVerifier) {
+          try { window.recaptchaVerifier.clear(); } catch(e) {}
+     }
+     window.recaptchaVerifier = new firebase.auth.RecaptchaVerifier('recaptcha-container', {
+          'size': 'invisible',
+          'callback': () => { /* reCAPTCHA solved */ },
+          'expired-callback': () => {
+               console.warn("reCAPTCHA expired, re-initializing...");
+               initRecaptcha();
+          }
+     });
+}
+initRecaptcha();
 
 // Step 1: Send Verification Code
 sendCodeBtn.addEventListener('click', async () => {
@@ -99,6 +110,11 @@ sendCodeBtn.addEventListener('click', async () => {
                return;
           }
 
+          // Re-initialize reCAPTCHA if it was cleared or expired
+          if (!window.recaptchaVerifier) {
+               initRecaptcha();
+          }
+
           const appVerifier = window.recaptchaVerifier;
           confirmationResult = await auth.signInWithPhoneNumber(phoneNumber, appVerifier);
 
@@ -115,14 +131,24 @@ sendCodeBtn.addEventListener('click', async () => {
           let msg = "Failed to send code.";
 
           switch (error.code) {
-               case 'auth/invalid-phone-number': msg = "The phone number is not valid."; break;
-               case 'auth/too-many-requests': msg = "Too many requests. Try again later."; break;
-               default: msg = error.message.replace("Firebase: ", "").split(" (")[0];
+               case 'auth/invalid-phone-number': msg = "The phone number is not valid. Make sure to include country code (e.g. +639...)"; break;
+               case 'auth/too-many-requests': msg = "Too many attempts. Please try again later."; break;
+               case 'auth/captcha-check-failed': msg = "Security check failed. Please refresh the page and try again."; break;
+               case 'auth/quota-exceeded': msg = "SMS quota exceeded. Please try again later."; break;
+               case 'auth/missing-phone-number': msg = "Please enter a phone number."; break;
+               case 'auth/network-request-failed': msg = "Network error. Check your internet connection."; break;
+               case 'auth/internal-error': msg = "Something went wrong. Please refresh the page and try again."; break;
+               default:
+                    // Show the actual Firebase error instead of masking it
+                    msg = error.message ? error.message.replace("Firebase: ", "").split(" (")[0] : "An unexpected error occurred.";
+                    if (!msg || msg === "Error" || msg.trim() === "") {
+                         msg = "Something went wrong. Please refresh the page and try again.";
+                    }
           }
 
-          if (msg === "Error") msg = "Check your phone number and try again.";
           showError(msg);
-          if (window.grecaptcha) grecaptcha.reset();
+          // Re-initialize reCAPTCHA for the next attempt
+          initRecaptcha();
      }
 });
 
