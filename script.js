@@ -131,6 +131,15 @@ async function handleLogin() {
           const userCredential = await auth.signInWithEmailAndPassword(email, password);
           const user = userCredential.user;
 
+          // Check if email is verified
+          if (!user.emailVerified) {
+               await auth.signOut();
+               showError("Your email address is not verified yet. Please check your inbox and Spam/Junk folder for the verification link before logging in.");
+               authBtn.classList.remove('loading');
+               authBtn.disabled = false;
+               return;
+          }
+
           // Check if disabled in Firestore
           const userDoc = await db.collection('users').doc(user.uid).get();
           if (userDoc.exists && userDoc.data().disabled === true) {
