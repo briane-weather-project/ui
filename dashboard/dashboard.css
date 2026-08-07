@@ -2239,3 +2239,32 @@ body.user-dashboard {
     border-top-color: rgba(239, 68, 68, 0.2);
 }
 
+/* ── Single Settings Card Layout ── */
+.settings-single-container {
+    max-width: 620px;
+    margin: 0 auto;
+    width: 100%;
+}
+
+.settings-section-divider {
+    font-size: 0.82rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #6366f1;
+    margin: 1.25rem 0 0.5rem;
+    padding-top: 1.25rem;
+    border-top: 1px solid rgba(226, 232, 240, 0.7);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.bg-night .settings-section-divider,
+.bg-stormy .settings-section-divider,
+.bg-rainy .settings-section-divider {
+    color: #818cf8;
+    border-top-color: rgba(255, 255, 255, 0.08);
+}
+
+
