@@ -574,26 +574,22 @@
                         </div>
                     </div>
                 </div>
-            </div>
 
                 <!-- Settings Section -->
                 <div id="section-settings" class="dashboard-section">
                     <div class="analytics-header">
                         <h2>Account Settings</h2>
-                        <p>Manage your profile, security, and preferences.</p>
+                        <p>Manage your profile, security, and emergency preferences.</p>
                     </div>
 
-                    <div class="settings-grid">
+                    <div class="dashboard-body-grid" id="settings-grid">
 
                         <!-- Profile Info Card -->
-                        <div class="settings-card">
-                            <div class="settings-card-header">
-                                <div class="settings-icon-box purple">
+                        <div class="panel-card settings-card">
+                            <div class="panel-header">
+                                <div class="panel-title">
                                     <i data-lucide="user-circle"></i>
-                                </div>
-                                <div>
                                     <h3>Profile Information</h3>
-                                    <p>Update your contact details stored in your account.</p>
                                 </div>
                             </div>
                             <div class="settings-card-body">
@@ -623,14 +619,11 @@
                         </div>
 
                         <!-- Change Password Card -->
-                        <div class="settings-card">
-                            <div class="settings-card-header">
-                                <div class="settings-icon-box blue">
+                        <div class="panel-card settings-card">
+                            <div class="panel-header">
+                                <div class="panel-title">
                                     <i data-lucide="lock-keyhole"></i>
-                                </div>
-                                <div>
                                     <h3>Change Password</h3>
-                                    <p>Use a strong password of at least 8 characters.</p>
                                 </div>
                             </div>
                             <div class="settings-card-body">
@@ -663,14 +656,11 @@
                         </div>
 
                         <!-- Notification Preferences Card -->
-                        <div class="settings-card">
-                            <div class="settings-card-header">
-                                <div class="settings-icon-box amber">
+                        <div class="panel-card settings-card">
+                            <div class="panel-header">
+                                <div class="panel-title">
                                     <i data-lucide="bell"></i>
-                                </div>
-                                <div>
                                     <h3>Notification Preferences</h3>
-                                    <p>Choose which alerts you want to receive.</p>
                                 </div>
                             </div>
                             <div class="settings-card-body">
@@ -712,14 +702,11 @@
                         </div>
 
                         <!-- Account Info Card (Read-only) -->
-                        <div class="settings-card">
-                            <div class="settings-card-header">
-                                <div class="settings-icon-box teal">
+                        <div class="panel-card settings-card">
+                            <div class="panel-header">
+                                <div class="panel-title">
                                     <i data-lucide="info"></i>
-                                </div>
-                                <div>
                                     <h3>Account Details</h3>
-                                    <p>Your account metadata and status.</p>
                                 </div>
                             </div>
                             <div class="settings-card-body">
@@ -743,14 +730,11 @@
                         </div>
 
                         <!-- Danger Zone Card -->
-                        <div class="settings-card danger-card">
-                            <div class="settings-card-header">
-                                <div class="settings-icon-box red">
-                                    <i data-lucide="triangle-alert"></i>
-                                </div>
-                                <div>
-                                    <h3>Danger Zone</h3>
-                                    <p>These actions are permanent and cannot be undone.</p>
+                        <div class="panel-card settings-card danger-card">
+                            <div class="panel-header">
+                                <div class="panel-title">
+                                    <i data-lucide="triangle-alert" style="color: #ef4444;"></i>
+                                    <h3 style="color: #ef4444;">Danger Zone</h3>
                                 </div>
                             </div>
                             <div class="settings-card-body">
@@ -779,7 +763,7 @@
                     </div>
                 </div>
 
-            </div>
+            </div> <!-- .scroll-area -->
         </main>
 
         <!-- Mobile Bottom Nav -->
