@@ -815,6 +815,7 @@ auth.onAuthStateChanged(async (user) => {
         // Strictly Email-based display name (never fall back to phone number)
         const displayName = userEmail ? userEmail.split('@')[0].toUpperCase() : 'USER';
         if (userEmailDisplay) userEmailDisplay.innerText = displayName + "'S DASHBOARD";
+        loadUserSettings(user);
         startRealtimeUpdates();
         fetchAdminConfig();
         triggerForecastLoad();
@@ -1428,17 +1429,24 @@ if (phoneAlertActionBtn) {
 
 // ── Load Settings on Auth ──────────────────────────────────────────────────
 function loadUserSettings(user) {
+    if (!user) return;
     const emailDisplay = document.getElementById('settings-email-display');
 
-    // Load Firestore profile
+    // 1. Instantly set email synchronously from Auth object (no loading delay!)
+    const initialEmail = user.email || '—';
+    if (emailDisplay) {
+        if (emailDisplay.tagName === 'INPUT') emailDisplay.value = initialEmail;
+        else emailDisplay.textContent = initialEmail;
+    }
+
+    // 2. Fetch Firestore profile for emergency contact phone number
     db.collection('users').doc(user.uid).get().then(doc => {
         const data = doc.exists ? doc.data() : {};
 
-        // Email is strictly from Auth or Firestore email field (never phone number)
-        const email = user.email || data.email || '—';
+        const finalEmail = user.email || data.email || '—';
         if (emailDisplay) {
-            if (emailDisplay.tagName === 'INPUT') emailDisplay.value = email;
-            else emailDisplay.textContent = email;
+            if (emailDisplay.tagName === 'INPUT') emailDisplay.value = finalEmail;
+            else emailDisplay.textContent = finalEmail;
         }
 
         // Phone number is purely from Firestore contact data
@@ -1448,10 +1456,6 @@ function loadUserSettings(user) {
         checkPhoneStatus(currentPhone);
     }).catch(e => {
         console.warn('Settings load error:', e);
-        if (emailDisplay) {
-            if (emailDisplay.tagName === 'INPUT') emailDisplay.value = user.email || '—';
-            else emailDisplay.textContent = user.email || '—';
-        }
         checkPhoneStatus('');
     });
 }
