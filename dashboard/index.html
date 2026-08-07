@@ -577,33 +577,31 @@
 
                 <!-- Settings Section -->
                 <div id="section-settings" class="dashboard-section">
-                    <div class="analytics-header">
+                    <div class="analytics-header" style="text-align: center;">
                         <h2>Account Settings</h2>
-                        <p>Manage your profile contact info and account security.</p>
+                        <p>Manage your contact details and security preferences.</p>
                     </div>
 
-                    <div class="dashboard-body-grid" id="settings-grid">
-
-                        <!-- Card 1: Profile & Emergency Contact -->
+                    <div class="settings-single-container">
                         <div class="panel-card settings-card">
                             <div class="panel-header">
                                 <div class="panel-title">
-                                    <i data-lucide="user"></i>
-                                    <h3>Profile &amp; Emergency Contact</h3>
+                                    <i data-lucide="user-cog"></i>
+                                    <h3>User Settings &amp; Security</h3>
                                 </div>
                             </div>
                             <div class="settings-card-body">
+
+                                <!-- Email Address (Clean, No Badge) -->
                                 <div class="settings-field">
                                     <label for="settings-email-display">Email Address</label>
-                                    <div class="settings-input-row">
-                                        <input type="email" id="settings-email-display" class="settings-input" placeholder="Loading..." disabled>
-                                        <span class="settings-badge verified"><i data-lucide="shield-check"></i> Verified</span>
-                                    </div>
+                                    <input type="email" id="settings-email-display" class="settings-input" placeholder="Loading..." disabled>
                                 </div>
 
+                                <!-- Emergency Phone Number -->
                                 <div class="settings-field">
                                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
-                                        <label for="settings-phone" style="margin: 0;">Phone Number</label>
+                                        <label for="settings-phone" style="margin: 0;">Emergency Phone Number</label>
                                         <span id="phone-status-badge" class="settings-badge warning"><i data-lucide="alert-triangle"></i> Not Configured</span>
                                     </div>
                                     <div class="settings-input-row">
@@ -614,19 +612,14 @@
                                     </div>
                                     <small>Format: +[country code][number] (e.g. +639123456789) for flood SMS alerts.</small>
                                 </div>
-                            </div>
-                            <div id="profile-msg" class="settings-msg" style="display:none;"></div>
-                        </div>
+                                <div id="profile-msg" class="settings-msg" style="display:none;"></div>
 
-                        <!-- Card 2: Security & Password Management -->
-                        <div class="panel-card settings-card">
-                            <div class="panel-header">
-                                <div class="panel-title">
-                                    <i data-lucide="shield"></i>
-                                    <h3>Security &amp; Account</h3>
+                                <!-- Security Divider -->
+                                <div class="settings-section-divider">
+                                    <i data-lucide="shield" style="width:16px; height:16px;"></i> Security &amp; Password
                                 </div>
-                            </div>
-                            <div class="settings-card-body">
+
+                                <!-- Password Change Fields -->
                                 <div class="settings-field">
                                     <label for="settings-current-pw">Current Password</label>
                                     <div class="settings-input-row password-row">
@@ -654,7 +647,9 @@
                                 <button id="change-password-btn" class="settings-btn primary full-width">
                                     <i data-lucide="lock"></i> Update Password
                                 </button>
+                                <div id="password-msg" class="settings-msg" style="display:none;"></div>
 
+                                <!-- Danger Action Row -->
                                 <div class="danger-compact-row">
                                     <div class="danger-compact-info">
                                         <strong>Delete Account</strong>
@@ -664,11 +659,10 @@
                                         <i data-lucide="trash-2"></i> Delete
                                     </button>
                                 </div>
-                            </div>
-                            <div id="password-msg" class="settings-msg" style="display:none;"></div>
-                            <div id="danger-msg" class="settings-msg" style="display:none;"></div>
-                        </div>
+                                <div id="danger-msg" class="settings-msg" style="display:none;"></div>
 
+                            </div>
+                        </div>
                     </div>
                 </div>
 
