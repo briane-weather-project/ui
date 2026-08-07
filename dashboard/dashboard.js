@@ -798,17 +798,22 @@ setTimeout(() => {
 // Check Auth State
 auth.onAuthStateChanged(async (user) => {
     if (user) {
+        let userEmail = user.email || '';
         try {
             const userDoc = await db.collection('users').doc(user.uid).get();
-            if (userDoc.exists && userDoc.data().disabled === true) {
-                await auth.signOut();
-                window.location.href = "../index.html";
-                return;
+            if (userDoc.exists) {
+                const data = userDoc.data();
+                if (data.disabled === true) {
+                    await auth.signOut();
+                    window.location.href = "../index.html";
+                    return;
+                }
+                if (!userEmail && data.email) userEmail = data.email;
             }
         } catch (e) { console.error("Auth check failed:", e); }
 
-        // Null-safe: phone-auth users may not have an email yet
-        const displayName = user.email ? user.email.split('@')[0].toUpperCase() : (user.phoneNumber || 'USER');
+        // Strictly Email-based display name (never fall back to phone number)
+        const displayName = userEmail ? userEmail.split('@')[0].toUpperCase() : 'USER';
         if (userEmailDisplay) userEmailDisplay.innerText = displayName + "'S DASHBOARD";
         startRealtimeUpdates();
         fetchAdminConfig();
@@ -1423,53 +1428,25 @@ if (phoneAlertActionBtn) {
 
 // ── Load Settings on Auth ──────────────────────────────────────────────────
 function loadUserSettings(user) {
-    // Email display
     const emailDisplay = document.getElementById('settings-email-display');
-    if (emailDisplay) emailDisplay.value = user.email || user.phoneNumber || '—';
-
-    // Account details
-    const uidEl = document.getElementById('settings-uid');
-    if (uidEl) uidEl.textContent = user.uid;
-
-    const verifiedEl = document.getElementById('settings-email-verified');
-    if (verifiedEl) {
-        verifiedEl.innerHTML = user.emailVerified
-            ? '<span style="color:#10b981;font-weight:700;">✓ Yes</span>'
-            : '<span style="color:#f59e0b;font-weight:700;">✗ Not verified</span>';
-    }
 
     // Load Firestore profile
     db.collection('users').doc(user.uid).get().then(doc => {
-        if (!doc.exists) {
-            checkPhoneStatus(user.phoneNumber);
-            return;
-        }
-        const data = doc.data();
+        const data = doc.exists ? doc.data() : {};
 
-        // Phone number & banner check
+        // Email is strictly from Auth or Firestore email field (never phone number)
+        const email = user.email || data.email || '—';
+        if (emailDisplay) emailDisplay.value = email;
+
+        // Phone number is purely from Firestore contact data
         const phoneInput = document.getElementById('settings-phone');
-        const currentPhone = data.phoneNumber || user.phoneNumber || '';
-        if (phoneInput && currentPhone) phoneInput.value = currentPhone;
+        const currentPhone = data.phoneNumber || '';
+        if (phoneInput) phoneInput.value = currentPhone;
         checkPhoneStatus(currentPhone);
-
-        // Member since
-        const createdEl = document.getElementById('settings-created-at');
-        if (createdEl && data.createdAt) {
-            const d = data.createdAt.toDate ? data.createdAt.toDate() : new Date(data.createdAt);
-            createdEl.textContent = d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-        }
-
-        // Notification prefs
-        const notifPrefs = data.notificationPrefs || {};
-        const floodEl = document.getElementById('notif-flood');
-        const sysEl = document.getElementById('notif-system');
-        const weeklyEl = document.getElementById('notif-weekly');
-        if (floodEl) floodEl.checked = notifPrefs.flood !== false;
-        if (sysEl) sysEl.checked = notifPrefs.system !== false;
-        if (weeklyEl) weeklyEl.checked = notifPrefs.weekly === true;
     }).catch(e => {
         console.warn('Settings load error:', e);
-        checkPhoneStatus(user.phoneNumber);
+        if (emailDisplay) emailDisplay.value = user.email || '—';
+        checkPhoneStatus('');
     });
 }
 
