@@ -1026,7 +1026,7 @@ auth.onAuthStateChanged(async (user) => {
             if (userDoc.exists && userDoc.data().role === 'admin') {
                 // Null-safe: display email or fallback
                 if (adminEmailDisplay) {
-                    adminEmailDisplay.innerText = user.email || user.phoneNumber || 'Admin';
+                    adminEmailDisplay.innerText = user.email || (userDoc.exists ? userDoc.data().email : 'Admin');
                 }
                 loadWeeklyData();
                 loadDashboardData();
