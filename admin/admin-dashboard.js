@@ -705,6 +705,7 @@ if (scrollArea) resizeObserver.observe(scrollArea);
 
 let historyInitialized = false;
 let lastProcessedTime = null;
+let firstSnapshotReceived = false;
 
 let currentAdminSelectedRange = 'today';
 let customAdminSelectedDate = null;
@@ -1111,7 +1112,7 @@ function updateCharts(rain, temp, hum, pres, water, light) {
     const maxPoints = 30; // Clean fixed 30-point window
 
     const nowMs = now.getTime();
-    const isNewPointDue = (nowMs - lastAdminChartUpdateTimestamp >= ADMIN_CHART_UPDATE_INTERVAL_MS) || lastAdminChartUpdateTimestamp === 0;
+    const isNewPointDue = (lastAdminChartUpdateTimestamp > 0) && (nowMs - lastAdminChartUpdateTimestamp >= ADMIN_CHART_UPDATE_INTERVAL_MS);
 
     const updateChartData = (chart, value, label) => {
         if (!chart || value === undefined || isNaN(value)) return;
@@ -1621,8 +1622,14 @@ function loadDashboardData() {
 
             // Update charts when we have a valid and new reading
             if (lastSeenStr && lastSeenStr !== lastProcessedTime) {
+                const isFirstSnapshot = !firstSnapshotReceived;
+                firstSnapshotReceived = true;
                 lastProcessedTime = lastSeenStr;
-                updateCharts(currentRainfallVal, tempVal, humidityVal, pressureVal, waterVal, lightVal);
+                // Skip chart update on the very first snapshot — that data is
+                // already in the historical chart from initializeChartHistory().
+                if (!isFirstSnapshot) {
+                    updateCharts(currentRainfallVal, tempVal, humidityVal, pressureVal, waterVal, lightVal);
+                }
 
                 // Live-update today's bar in weeklyRainChart in real time!
                 if (weeklyRainChart && weeklyRainChart.data && weeklyRainChart.data.datasets.length > 0) {
