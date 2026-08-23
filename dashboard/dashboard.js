@@ -885,6 +885,7 @@ auth.onAuthStateChanged(async (user) => {
 
 let historyInitialized = false;
 let lastProcessedTime = null;
+let firstSnapshotReceived = false;
 
 function startRealtimeUpdates() {
     // 0. Initialize History once on load
@@ -1000,8 +1001,16 @@ function startRealtimeUpdates() {
             if (lastUpdate) lastUpdate.innerText = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
             if (lastSeenStr && lastSeenStr !== lastProcessedTime) {
+                const isFirstSnapshot = !firstSnapshotReceived;
+                firstSnapshotReceived = true;
                 lastProcessedTime = lastSeenStr;
-                updateCharts(rain, temp, hum, pres, water, light);
+                // Skip chart update on the very first snapshot — that data is
+                // already represented in the historical chart loaded by
+                // initializeChartHistory(). Only genuinely NEW readings should
+                // add points to the live chart.
+                if (!isFirstSnapshot) {
+                    updateCharts(rain, temp, hum, pres, water, light);
+                }
                 populateHourlyTempTimeline();
 
                 // Live-update today's bar in weeklyRainChart in real time!
@@ -1444,7 +1453,7 @@ function updateCharts(rain, temp, hum, pres, water, light) {
     const maxPoints = 30; // Clean fixed 30-point window
 
     const nowMs = now.getTime();
-    const isNewPointDue = (nowMs - lastUserChartUpdateTimestamp >= USER_CHART_UPDATE_INTERVAL_MS) || lastUserChartUpdateTimestamp === 0;
+    const isNewPointDue = (lastUserChartUpdateTimestamp > 0) && (nowMs - lastUserChartUpdateTimestamp >= USER_CHART_UPDATE_INTERVAL_MS);
 
     const updateChartData = (chart, value, label) => {
         if (!chart || value === undefined || isNaN(value)) return;
