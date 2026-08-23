@@ -1,0 +1,2225 @@
+// Dynamic Configuration & Baselines
+let alertThresholdVal = 50.0;
+let currentGraphTension = 0.4;
+let currentGraphWindow = 12;
+let modelWeights = { pres: 40, hum: 20, light: 20, rain: 20 };
+let sensorOffsets = { temp: 0, water: 0 };
+let physicalMountHeight = 200;
+let maxClearSkyLux = 65000;
+let standardBasePressure = 1013;
+let lastSeenTimestamp = null;
+let currentSensorData = {
+    temp: NaN,
+    rainRate: 0,
+    water: -1,
+    light: -1,
+    cloudCover: 0
+};
+let isFetchingForecast = false;
+
+// Initialize Lucide Icons
+lucide.createIcons();
+
+// Firebase is initialized by firebase-config.js
+
+// UI Elements
+const rainfallValue = document.getElementById('rainfall-value');
+const rainRateValue = document.getElementById('rain-rate-value');
+const rainIntensityBadge = document.getElementById('rain-intensity-badge');
+const maxRainfall = document.getElementById('max-rainfall');
+const alertBadge = document.getElementById('alert-badge');
+const userEmailDisplay = document.getElementById('user-display-email');
+const lastUpdate = document.getElementById('last-update');
+const riskLevelText = document.getElementById('risk-level-text');
+const locationNameDisplay = document.getElementById('location-name-display');
+const mapLinkSidebar = document.getElementById('map-link-sidebar');
+const mapLinkMobile = document.getElementById('map-link-mobile');
+const mapLinkBtn = document.getElementById('map-link-btn');
+const systemStatusText = document.getElementById('system-status-text');
+const systemStatusDot = document.getElementById('system-status-dot');
+const systemStatusTextDesktop = document.getElementById('system-status-text-desktop');
+const systemStatusDotDesktop = document.getElementById('system-status-dot-desktop');
+
+const tempEl = document.getElementById('temp-value');
+const humidityEl = document.getElementById('humidity-value');
+const pressureEl = document.getElementById('pressure-value');
+const pressureTrendBadge = document.getElementById('pressure-trend-badge');
+const lightEl = document.getElementById('light-value');
+const cloudCoverEl = document.getElementById('cloud-cover-value');
+const waterLevelEl = document.getElementById('water-level-value');
+const waterRiseRateEl = document.getElementById('water-rise-rate-value');
+const dewPointEl = document.getElementById('dew-point-value');
+const heatIndexEl = document.getElementById('heat-index-value');
+
+const adminMessageDisplay = document.getElementById('admin-message-display');
+const liveDateText = document.getElementById('live-date-text');
+
+// Live Date & Time Clock
+function updateLiveDateTime() {
+    if (!liveDateText) return;
+    const now = new Date();
+    const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+    const dateStr = now.toLocaleDateString('en-US', options);
+    const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    liveDateText.textContent = `${dateStr} • ${timeStr}`;
+}
+updateLiveDateTime();
+setInterval(updateLiveDateTime, 1000);
+
+// Navigation Logic
+const navLinks = document.querySelectorAll('.nav-item[data-section], .bottom-nav-item[data-section]');
+const sections = document.querySelectorAll('.dashboard-section');
+
+function switchToSection(sectionId) {
+    // Update Active Nav States
+    navLinks.forEach(l => l.classList.remove('active'));
+    document.querySelectorAll(`[data-section="${sectionId}"]`).forEach(l => l.classList.add('active'));
+
+    // Switch View
+    sections.forEach(s => s.classList.remove('active'));
+    const targetSection = document.getElementById(`section-${sectionId}`);
+    if (targetSection) targetSection.classList.add('active');
+
+    // Fix for Chart.js layout bugs: force resize when section becomes visible
+    if (sectionId === 'forecast') {
+        triggerForecastLoad();
+        loadWeeklyData();
+    }
+
+    setTimeout(() => {
+        const allCharts = [
+            chartRain, chartAtmo,
+            detailedTempChart, detailedHumChart, detailedPresChart, detailedRainChart,
+            detailedWaterChart, detailedLightChart,
+            hourlyPrecipChart, weeklyRainChart
+        ];
+        allCharts.forEach(c => {
+            if (c) {
+                c.resize();
+                c.update();
+            }
+        });
+    }, 400);
+
+    // Refresh icons for new view
+    lucide.createIcons();
+}
+
+navLinks.forEach(link => {
+    link.addEventListener('click', (e) => {
+        e.preventDefault();
+        const sectionId = link.getAttribute('data-section');
+        switchToSection(sectionId);
+    });
+});
+
+// ── Show/Hide Secondary Sensors Toggle ──────────────────────────────────
+function initSensorToggle() {
+    const toggleBtn = document.getElementById('toggle-more-sensors-btn');
+    const drawer = document.getElementById('more-sensors-drawer');
+    const toggleIcon = document.getElementById('toggle-sensors-icon');
+    const toggleText = document.getElementById('toggle-sensors-btn-text');
+
+    if (!toggleBtn || !drawer || toggleBtn.dataset.initialized) return;
+    toggleBtn.dataset.initialized = 'true';
+
+    // Load saved user preference (defaults to collapsed)
+    const isExpanded = localStorage.getItem('briane_sensors_expanded') === 'true';
+    if (isExpanded) {
+        drawer.classList.remove('collapsed');
+        drawer.classList.add('expanded');
+        if (toggleText) toggleText.innerText = 'Hide Secondary Sensors';
+        if (toggleIcon) toggleIcon.setAttribute('data-lucide', 'chevron-up');
+        if (window.lucide) lucide.createIcons();
+    }
+
+    toggleBtn.addEventListener('click', () => {
+        const currentlyExpanded = drawer.classList.contains('expanded');
+        if (currentlyExpanded) {
+            drawer.classList.remove('expanded');
+            drawer.classList.add('collapsed');
+            if (toggleText) toggleText.innerText = 'Show More Sensor Metrics (Comfort Index, AI Score)';
+            if (toggleIcon) toggleIcon.setAttribute('data-lucide', 'chevron-down');
+            localStorage.setItem('briane_sensors_expanded', 'false');
+        } else {
+            drawer.classList.remove('collapsed');
+            drawer.classList.add('expanded');
+            if (toggleText) toggleText.innerText = 'Hide Secondary Sensors';
+            if (toggleIcon) toggleIcon.setAttribute('data-lucide', 'chevron-up');
+            localStorage.setItem('briane_sensors_expanded', 'true');
+        }
+        if (window.lucide) lucide.createIcons();
+    });
+}
+document.addEventListener('DOMContentLoaded', initSensorToggle);
+setTimeout(initSensorToggle, 300);
+
+// Date/Time label helper for clean graph tooltips & x-axis ticks
+function formatDateTimeLabel(date) {
+    if (!date || isNaN(date.getTime())) date = new Date();
+    const isToday = new Date().toDateString() === date.toDateString();
+    const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    if (isToday) return timeStr;
+    const dateStr = date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    return `${dateStr}, ${timeStr}`;
+}
+
+// Downsamples a large array of historical entries to a clean target number of points (e.g. 30)
+function downsampleHistoricalPoints(rawDocs, targetCount = 30) {
+    if (!rawDocs || rawDocs.length <= targetCount) return rawDocs;
+    const step = (rawDocs.length - 1) / (targetCount - 1);
+    const sampled = [];
+    for (let i = 0; i < targetCount; i++) {
+        const index = Math.round(i * step);
+        sampled.push(rawDocs[index]);
+    }
+    return sampled;
+}
+
+// Charts Logic
+const ctxRain = document.getElementById('mainRainfallChart')?.getContext('2d');
+const chartRain = ctxRain ? new Chart(ctxRain, {
+    type: 'line',
+    data: {
+        labels: [],
+        datasets: [{
+            label: 'Rainfall (mm)',
+            data: [],
+            borderColor: '#6366f1',
+            backgroundColor: 'rgba(99, 102, 241, 0.08)',
+            fill: true,
+            tension: 0.4,
+            cubicInterpolationMode: 'monotone',
+            pointRadius: 0,
+            pointHoverRadius: 6,
+            pointHitRadius: 14,
+            pointHoverBackgroundColor: '#6366f1',
+            pointHoverBorderColor: '#ffffff',
+            pointHoverBorderWidth: 2.5,
+            borderWidth: 2.5
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: {
+            mode: 'index',
+            intersect: false
+        },
+        plugins: {
+            legend: { display: false },
+            tooltip: {
+                enabled: true,
+                backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                titleColor: '#ffffff',
+                bodyColor: '#cbd5e1',
+                padding: 10,
+                cornerRadius: 8,
+                callbacks: {
+                    label: function(context) {
+                        return ` Rainfall: ${context.parsed.y.toFixed(2)} mm`;
+                    }
+                }
+            }
+        },
+        scales: {
+            y: { 
+                beginAtZero: true, 
+                grace: '5%',
+                grid: { color: 'rgba(0,0,0,0.04)' }, 
+                ticks: { font: { family: 'Plus Jakarta Sans', weight: '600', size: 11 } } 
+            },
+            x: {
+                grid: { display: false },
+                ticks: {
+                    maxTicksLimit: 6,
+                    maxRotation: 0,
+                    autoSkip: true,
+                    font: { family: 'Plus Jakarta Sans', weight: '600', size: 11 }
+                }
+            }
+        }
+    }
+}) : null;
+
+const ctxAtmo = document.getElementById('atmosphericChart')?.getContext('2d');
+const chartAtmo = ctxAtmo ? new Chart(ctxAtmo, {
+    type: 'line',
+    data: {
+        labels: [],
+        datasets: [
+            {
+                label: 'Temp (°C)',
+                data: [],
+                borderColor: '#f97316',
+                backgroundColor: 'rgba(249, 115, 22, 0.06)',
+                fill: true,
+                tension: 0.4,
+                cubicInterpolationMode: 'monotone',
+                yAxisID: 'y',
+                pointRadius: 0,
+                pointHoverRadius: 6,
+                pointHitRadius: 14,
+                pointHoverBackgroundColor: '#f97316',
+                pointHoverBorderColor: '#ffffff',
+                pointHoverBorderWidth: 2.5,
+                borderWidth: 2.5
+            },
+            {
+                label: 'Hum (%)',
+                data: [],
+                borderColor: '#06b6d4',
+                backgroundColor: 'rgba(6, 182, 212, 0.06)',
+                fill: true,
+                tension: 0.4,
+                cubicInterpolationMode: 'monotone',
+                yAxisID: 'y1',
+                pointRadius: 0,
+                pointHoverRadius: 6,
+                pointHitRadius: 14,
+                pointHoverBackgroundColor: '#06b6d4',
+                pointHoverBorderColor: '#ffffff',
+                pointHoverBorderWidth: 2.5,
+                borderWidth: 2.5
+            }
+        ]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: {
+            mode: 'index',
+            intersect: false
+        },
+        plugins: {
+            legend: { position: 'top', labels: { font: { family: 'Plus Jakarta Sans', weight: '700', size: 11 } } },
+            tooltip: {
+                enabled: true,
+                backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                titleColor: '#ffffff',
+                padding: 10,
+                cornerRadius: 8
+            }
+        },
+        scales: {
+            y: { type: 'linear', display: true, position: 'left', grace: '5%', title: { display: true, text: 'Temp (°C)' }, grid: { color: 'rgba(0,0,0,0.04)' } },
+            y1: { type: 'linear', display: true, position: 'right', grace: '5%', grid: { drawOnChartArea: false }, title: { display: true, text: 'Hum (%)' } },
+            x: {
+                grid: { display: false },
+                ticks: { maxTicksLimit: 6, maxRotation: 0, autoSkip: true, font: { family: 'Plus Jakarta Sans', weight: '600', size: 11 } }
+            }
+        }
+    }
+}) : null;
+
+// Detailed Charts Initialization
+const createDetailedChart = (id, label, color, bgColor) => {
+    const canvas = document.getElementById(id);
+    if (!canvas) return null;
+    const ctx = canvas.getContext('2d');
+    return new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [{
+                label: label,
+                data: [],
+                borderColor: color,
+                backgroundColor: bgColor,
+                fill: true,
+                tension: 0.4,
+                cubicInterpolationMode: 'monotone',
+                borderWidth: 2.5,
+                pointRadius: 0,
+                pointHoverRadius: 6,
+                pointHitRadius: 14,
+                pointHoverBackgroundColor: color,
+                pointHoverBorderColor: '#ffffff',
+                pointHoverBorderWidth: 2.5
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            resizeDelay: 0,
+            interaction: {
+                mode: 'index',
+                intersect: false
+            },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    enabled: true,
+                    backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                    titleColor: '#ffffff',
+                    bodyColor: '#cbd5e1',
+                    padding: 10,
+                    cornerRadius: 8,
+                    displayColors: true
+                }
+            },
+            scales: {
+                y: { beginAtZero: false, grace: '5%', grid: { color: 'rgba(0,0,0,0.04)' }, ticks: { font: { family: 'Plus Jakarta Sans', size: 10, weight: '600' } } },
+                x: {
+                    grid: { display: false },
+                    ticks: {
+                        maxTicksLimit: 6,
+                        maxRotation: 0,
+                        autoSkip: true,
+                        font: { family: 'Plus Jakarta Sans', size: 10, weight: '600' }
+                    }
+                }
+            }
+        }
+    });
+};
+
+const detailedTempChart = createDetailedChart('detailedTempChart', 'Temperature (°C)', '#f97316', 'rgba(249, 115, 22, 0.05)');
+const detailedHumChart = createDetailedChart('detailedHumChart', 'Humidity (%)', '#06b6d4', 'rgba(6, 182, 212, 0.05)');
+const detailedPresChart = createDetailedChart('detailedPresChart', 'Pressure (hPa)', '#a855f7', 'rgba(168, 85, 247, 0.05)');
+const detailedRainChart = createDetailedChart('detailedRainChart', 'Rainfall (mm)', '#6366f1', 'rgba(99, 102, 241, 0.05)');
+const detailedWaterChart = createDetailedChart('detailedWaterChart', 'Water Level (cm)', '#0d9488', 'rgba(13, 148, 136, 0.05)');
+const detailedLightChart = createDetailedChart('detailedLightChart', 'Light Intensity (lux)', '#eab308', 'rgba(234, 179, 8, 0.05)');
+
+let hourlyPrecipChart = null;
+let weeklyRainChart = null;
+let currentLatitude = 0.0;
+let currentLongitude = 0.0;
+let loadedForecastLatitude = null;
+let loadedForecastLongitude = null;
+
+let lastFetchedLocationNameLat = null;
+let lastFetchedLocationNameLng = null;
+
+async function updateLocationName(lat, lng) {
+    if (lat === 0 || lng === 0) return;
+    if (lastFetchedLocationNameLat === lat && lastFetchedLocationNameLng === lng) return;
+
+    try {
+        if (locationNameDisplay) locationNameDisplay.innerText = 'Resolving location...';
+        const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=10`, {
+            headers: { 'User-Agent': 'BRIANE-User-Dashboard/1.0' }
+        });
+        const data = await response.json();
+
+        let placeName = 'Unknown Location';
+        if (data && data.address) {
+            const addr = data.address;
+            const place = addr.city || addr.town || addr.village || addr.county || addr.state || 'Unknown Location';
+            const country = addr.country || '';
+            placeName = country ? `${place}, ${country}` : place;
+        } else if (data && data.display_name) {
+            placeName = data.display_name.split(',')[0];
+        }
+
+        if (locationNameDisplay) locationNameDisplay.innerText = placeName;
+        lastFetchedLocationNameLat = lat;
+        lastFetchedLocationNameLng = lng;
+    } catch (e) {
+        console.error("Error fetching location name:", e);
+        if (locationNameDisplay) locationNameDisplay.innerText = 'Location lookup failed';
+    }
+}
+
+function triggerForecastLoad() {
+    if (currentLatitude !== 0.0 && currentLongitude !== 0.0) {
+        loadOpenMeteoForecast(currentLatitude, currentLongitude);
+    } else {
+        // Fallback to Manila coordinates if GPS is not yet loaded
+        loadOpenMeteoForecast(14.5995, 120.9842);
+    }
+}
+
+async function loadWeeklyData() {
+    const canvas = document.getElementById('weeklyRainChart');
+    const ctx = canvas ? canvas.getContext('2d') : null;
+
+    // Fetch data for the last 7 days
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    sevenDaysAgo.setHours(0, 0, 0, 0);
+
+    try {
+        const snapshot = await db.collection('weather_history')
+            .where('timestamp', '>=', sevenDaysAgo)
+            .orderBy('timestamp', 'asc')
+            .get();
+
+        const dailyTotals = {};
+        const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        const labels = [];
+        const data = [];
+
+        let totalTempSum = 0;
+        let tempCount = 0;
+
+        // Initialize last 7 days with 0
+        for (let i = 6; i >= 0; i--) {
+            const d = new Date();
+            d.setDate(d.getDate() - i);
+            const dayName = days[d.getDay()];
+            dailyTotals[dayName] = 0;
+            labels.push(dayName);
+        }
+
+        snapshot.forEach(doc => {
+            const entry = doc.data();
+            const date = entry.timestamp ? (entry.timestamp.toDate ? entry.timestamp.toDate() : new Date(entry.timestamp)) : new Date();
+            const dayName = days[date.getDay()];
+
+            if (dailyTotals.hasOwnProperty(dayName)) {
+                dailyTotals[dayName] = Math.max(dailyTotals[dayName], parseFloat(entry.rainfall) || 0);
+            }
+
+            // Track temperature for weekly average
+            const t = parseFloat(entry.temperature);
+            if (!isNaN(t) && t !== 0) {
+                totalTempSum += t;
+                tempCount++;
+            }
+        });
+
+        labels.forEach(label => data.push(dailyTotals[label]));
+
+        if (ctx) {
+            if (weeklyRainChart) {
+                weeklyRainChart.data.labels = labels;
+                weeklyRainChart.data.datasets[0].data = data;
+                weeklyRainChart.update();
+            } else {
+                weeklyRainChart = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'Daily Rainfall (mm)',
+                            data: data,
+                            backgroundColor: 'rgba(99, 102, 241, 0.5)',
+                            borderColor: '#6366f1',
+                            borderWidth: 2,
+                            borderRadius: 8
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.05)' } },
+                            x: { grid: { display: false } }
+                        }
+                    }
+                });
+            }
+        }
+
+        // Update Summary Stats
+        const totalRain = data.reduce((a, b) => a + b, 0);
+        const peakRain = Math.max(...data, 0);
+        const rainDays = data.filter(d => d > 0.1).length;
+        const avgTemp = tempCount > 0 ? (totalTempSum / tempCount) : 0;
+
+        if (document.getElementById('weekly-total-rain')) document.getElementById('weekly-total-rain').innerText = totalRain.toFixed(1) + " mm";
+        if (document.getElementById('weekly-peak-rain')) document.getElementById('weekly-peak-rain').innerText = peakRain.toFixed(1) + " mm";
+        if (document.getElementById('weekly-rain-days')) document.getElementById('weekly-rain-days').innerText = rainDays;
+        if (document.getElementById('weekly-avg-temp')) document.getElementById('weekly-avg-temp').innerText = avgTemp > 0 ? avgTemp.toFixed(1) + " °C" : "-- °C";
+
+    } catch (error) {
+        console.error("Error loading weekly data:", error);
+    }
+}
+
+async function loadOpenMeteoForecast(lat, lng) {
+    // Don't re-fetch if we already have data for this approximate location
+    if (loadedForecastLatitude === lat.toFixed(3) && loadedForecastLongitude === lng.toFixed(3)) return;
+
+    loadedForecastLatitude = lat.toFixed(3);
+    loadedForecastLongitude = lng.toFixed(3);
+    const container = document.getElementById('forecast-days-container');
+    const locLabel = document.getElementById('forecast-location-label');
+
+    // Start weather and geo requests in parallel for maximum speed
+    const weatherPromise = fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum,weathercode&hourly=temperature_2m,precipitation,precipitation_probability,weathercode,is_day&timezone=auto`);
+
+    const geoPromise = fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=10`, {
+        headers: { 'User-Agent': 'BRIANE-User-Dashboard/1.0' }
+    }).catch(e => null);
+
+    // Handle Geo Lookup whenever it finishes
+    geoPromise.then(res => res ? res.json() : null).then(geoData => {
+        if (locLabel && geoData) {
+            let placeName = 'Unknown Location';
+            if (geoData.address) {
+                const addr = geoData.address;
+                placeName = `Location: ${addr.city || addr.town || addr.village || addr.county || 'Unknown'}`;
+            }
+            locLabel.innerText = placeName;
+        }
+    }).catch(e => console.error("Geo lookup failed:", e));
+
+    try {
+        const res = await weatherPromise;
+        const data = await res.json();
+
+        if (!data || !data.daily) throw new Error("Invalid API response");
+
+        if (container) {
+            container.innerHTML = '';
+        }
+
+        const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        const weatherIcons = {
+            0: 'sun', // Clear sky
+            1: 'cloudy', 2: 'cloudy', 3: 'cloudy', // Mainly clear, partly cloudy, and overcast
+            45: 'cloud', 48: 'cloud', // Fog and depositing rime fog
+            51: 'cloud-drizzle', 53: 'cloud-drizzle', 55: 'cloud-drizzle', // Drizzle
+            61: 'cloud-rain', 63: 'cloud-rain', 65: 'cloud-rain', // Rain
+            71: 'snowflake', 73: 'snowflake', 75: 'snowflake', // Snow
+            80: 'cloud-rain', 81: 'cloud-rain', 82: 'cloud-rain', // Rain showers
+            95: 'cloud-lightning', 96: 'cloud-lightning', 99: 'cloud-lightning' // Thunderstorm
+        };
+
+        let maxRainProb = 0;
+        let maxRainDay = '';
+        let totalTemps = 0;
+        let dailyCount = data.daily.time.length;
+
+        for (let i = 0; i < dailyCount; i++) {
+            const date = new Date(data.daily.time[i]);
+            const dayName = days[date.getDay()];
+            const maxTemp = data.daily.temperature_2m_max[i];
+            const minTemp = data.daily.temperature_2m_min[i];
+            const rainProb = data.daily.precipitation_probability_max[i];
+            const code = data.daily.weathercode[i];
+            const iconName = weatherIcons[code] || 'cloud';
+
+            totalTemps += (maxTemp + minTemp) / 2;
+
+            if (rainProb > maxRainProb) {
+                maxRainProb = rainProb;
+                maxRainDay = dayName;
+            }
+
+            const card = document.createElement('div');
+            card.className = 'forecast-day-card';
+            card.innerHTML = `
+                <div class="forecast-day-name">${dayName.substring(0, 3)}</div>
+                <div class="forecast-day-icon"><i data-lucide="${iconName}"></i></div>
+                <div class="forecast-day-temps">
+                    <span class="max">${maxTemp.toFixed(0)}°</span>
+                    <span class="min">${minTemp.toFixed(0)}°</span>
+                </div>
+                <div class="forecast-day-rain">
+                    <i data-lucide="droplet" style="width:12px;height:12px;color:#3b82f6;"></i>
+                    <span>${rainProb}%</span>
+                </div>
+            `;
+            if (container) {
+                container.appendChild(card);
+            }
+        }
+
+        // Update summaries
+        const avgTemp = totalTemps / dailyCount;
+        if (document.getElementById('forecast-risk-day')) {
+            document.getElementById('forecast-risk-day').innerText = maxRainProb > 30 ? `${maxRainDay} (${maxRainProb}%)` : 'Low Risk';
+        }
+        if (document.getElementById('forecast-avg-temp')) {
+            document.getElementById('forecast-avg-temp').innerText = `${avgTemp.toFixed(1)} °C`;
+        }
+
+        // Render weekly precipitation chart
+        renderWeeklyForecastChart(data.daily);
+
+        lucide.createIcons();
+    } catch (err) {
+        console.error("Open-Meteo API load failed: ", err);
+        if (container) {
+            container.innerHTML = `<div class="forecast-error">Failed to load weather forecast: ${err.message}</div>`;
+        }
+    }
+}
+
+function renderWeeklyForecastChart(dailyData) {
+    const canvas = document.getElementById('hourlyPrecipChart');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+
+    const labels = [];
+    const probData = [];
+    const precipData = [];
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+    for (let i = 0; i < dailyData.time.length; i++) {
+        const date = new Date(dailyData.time[i]);
+        labels.push(days[date.getDay()]);
+        probData.push(dailyData.precipitation_probability_max[i]);
+        precipData.push(dailyData.precipitation_sum ? dailyData.precipitation_sum[i] : 0);
+    }
+
+    if (hourlyPrecipChart) {
+        hourlyPrecipChart.data.labels = labels;
+        hourlyPrecipChart.data.datasets[0].data = probData;
+        hourlyPrecipChart.data.datasets[1].data = precipData;
+        hourlyPrecipChart.update();
+    } else {
+        hourlyPrecipChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [
+                    {
+                        label: 'Rain Prob (%)',
+                        data: probData,
+                        backgroundColor: 'rgba(59, 130, 246, 0.5)',
+                        borderColor: '#3b82f6',
+                        borderWidth: 1,
+                        yAxisID: 'y'
+                    },
+                    {
+                        label: 'Expected (mm)',
+                        data: precipData,
+                        type: 'line',
+                        borderColor: '#6366f1',
+                        backgroundColor: 'rgba(99, 102, 241, 0.05)',
+                        fill: true,
+                        tension: 0.4,
+                        yAxisID: 'y1'
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        max: 100,
+                        grid: { color: 'rgba(0,0,0,0.05)' },
+                        title: { display: true, text: 'Prob (%)', font: { size: 10 } }
+                    },
+                    y1: {
+                        beginAtZero: true,
+                        position: 'right',
+                        grid: { drawOnChartArea: false },
+                        title: { display: true, text: 'Amount (mm)', font: { size: 10 } }
+                    },
+                    x: { grid: { display: false } }
+                },
+                plugins: {
+                    legend: { position: 'top', labels: { boxWidth: 10, font: { size: 10 } } }
+                }
+            }
+        });
+    }
+}
+
+// Helper to safely parse any Firestore timestamp format (native, serialized JSON, string, etc.)
+function parseFirestoreTimestamp(timestamp) {
+    if (!timestamp) return new Date();
+    if (typeof timestamp.toDate === 'function') return timestamp.toDate();
+    if (timestamp.seconds !== undefined) return new Date(timestamp.seconds * 1000);
+    const date = new Date(timestamp);
+    return isNaN(date.getTime()) ? new Date() : date;
+}
+
+let lastForecastFetch = 0;
+let cachedForecastData = null;
+
+async function populateHourlyTempTimeline() {
+    const container = document.getElementById('hourly-temp-timeline');
+    if (!container) return;
+
+    // Render immediately with whatever we have (Now card + cached forecast)
+    renderTimeline(cachedForecastData);
+
+    const nowTime = Date.now();
+    // Cache forecast data for 30 minutes to improve performance and prevent rendering lag
+    if (cachedForecastData && (nowTime - lastForecastFetch < 30 * 60 * 1000)) {
+        return;
+    }
+
+    if (isFetchingForecast) return;
+    isFetchingForecast = true;
+
+    try {
+        const lat = currentLatitude || 14.5995;
+        const lng = currentLongitude || 120.9842;
+        const forecastRes = await fetch(
+            `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&hourly=temperature_2m,weathercode,is_day&timezone=auto&forecast_hours=24`
+        );
+        cachedForecastData = await forecastRes.json();
+        lastForecastFetch = nowTime;
+        renderTimeline(cachedForecastData);
+    } catch (err) {
+        console.error("Error loading hourly timeline:", err);
+    } finally {
+        isFetchingForecast = false;
+    }
+}
+
+function renderTimeline(forecastData) {
+    const container = document.getElementById('hourly-temp-timeline');
+    if (!container) return;
+
+    // Process future entries
+    const futureEntries = [];
+    const weatherCodeIcons = {
+        0: { day: 'sun', night: 'moon' },
+        1: { day: 'cloudy', night: 'cloud-moon' },
+        2: { day: 'cloudy', night: 'cloud-moon' },
+        3: { day: 'cloudy', night: 'cloud-moon' },
+        45: { day: 'cloud', night: 'cloud' },
+        48: { day: 'cloud', night: 'cloud' },
+        51: { day: 'cloud-drizzle', night: 'cloud-drizzle' },
+        53: { day: 'cloud-drizzle', night: 'cloud-drizzle' },
+        55: { day: 'cloud-drizzle', night: 'cloud-drizzle' },
+        61: { day: 'cloud-rain', night: 'cloud-rain' },
+        63: { day: 'cloud-rain', night: 'cloud-rain' },
+        65: { day: 'cloud-rain', night: 'cloud-rain' },
+        80: { day: 'cloud-rain', night: 'cloud-rain' },
+        81: { day: 'cloud-rain', night: 'cloud-rain' },
+        82: { day: 'cloud-rain', night: 'cloud-rain' },
+        95: { day: 'cloud-lightning', night: 'cloud-lightning' },
+        96: { day: 'cloud-lightning', night: 'cloud-lightning' },
+        99: { day: 'cloud-lightning', night: 'cloud-lightning' }
+    };
+
+    if (forecastData && forecastData.hourly) {
+        const now = new Date();
+        for (let i = 0; i < forecastData.hourly.time.length; i++) {
+            const forecastTime = new Date(forecastData.hourly.time[i]);
+            if (forecastTime > now) {
+                futureEntries.push({
+                    time: forecastTime,
+                    temp: forecastData.hourly.temperature_2m[i],
+                    weatherCode: forecastData.hourly.weathercode ? forecastData.hourly.weathercode[i] : 0,
+                    isDay: forecastData.hourly.is_day ? forecastData.hourly.is_day[i] === 1 : true
+                });
+                if (futureEntries.length >= 12) break;
+            }
+        }
+    }
+
+    container.innerHTML = '';
+
+    // "Now" card
+    const currentTempDisplay = (isNaN(currentSensorData.temp)) ? "--" : Math.round(currentSensorData.temp);
+
+    let currentIcon = 'sun';
+    const rainRate = currentSensorData.rainRate || 0;
+    const water = currentSensorData.water || 0;
+    const lightVal = currentSensorData.light || 0;
+    const maxChannelCapacity = physicalMountHeight * 0.8;
+
+    if (water >= maxChannelCapacity || rainRate >= 15.0) currentIcon = 'cloud-lightning';
+    else if (rainRate > 0.0) currentIcon = 'cloud-rain';
+    else {
+        const hour = new Date().getHours();
+        const isDaytime = hour >= 5 && hour < 18;
+        if (hour >= 18 || hour < 5) currentIcon = 'moon';
+        else if (isDaytime && lightVal >= 0 && lightVal < 6000) currentIcon = 'cloudy';
+        else currentIcon = 'sun';
+    }
+
+    const nowCard = document.createElement('div');
+    nowCard.className = 'hourly-item is-now';
+    nowCard.id = 'timeline-now-card';
+    nowCard.innerHTML = `
+        <span class="hourly-time" style="color: #6366f1; font-weight: 800; display: inline-flex; align-items: center; gap: 6px;"><span class="timeline-pulse-dot"></span>Now</span>
+        <div class="hourly-icon"><i data-lucide="${currentIcon}"></i></div>
+        <span class="hourly-temp">${currentTempDisplay}°</span>
+    `;
+    container.appendChild(nowCard);
+
+    futureEntries.forEach(entry => {
+        const label = entry.time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        let iconName = 'sun';
+        const iconConfig = weatherCodeIcons[entry.weatherCode];
+        if (iconConfig) iconName = entry.isDay ? iconConfig.day : iconConfig.night;
+
+        const card = document.createElement('div');
+        card.className = 'hourly-item hourly-predicted';
+        card.innerHTML = `
+            <span class="hourly-time">${label}</span>
+            <div class="hourly-icon"><i data-lucide="${iconName}"></i></div>
+            <span class="hourly-temp">${Math.round(entry.temp)}°</span>
+        `;
+        container.appendChild(card);
+    });
+
+    lucide.createIcons();
+}
+
+// Modern fix for container-based resizing
+const resizeObserver = new ResizeObserver(() => {
+    const allCharts = [
+        chartRain, chartAtmo,
+        detailedTempChart, detailedHumChart, detailedPresChart, detailedRainChart,
+        detailedWaterChart, detailedLightChart,
+        hourlyPrecipChart, weeklyRainChart
+    ];
+    allCharts.forEach(c => {
+        if (c && c.canvas && c.canvas.offsetParent !== null) { // Only resize if visible
+            c.resize();
+        }
+    });
+});
+
+// Observe the main content area for any size changes
+const scrollArea = document.querySelector('.scroll-area');
+if (scrollArea) resizeObserver.observe(scrollArea);
+
+// Fallback for window resize
+window.addEventListener('resize', () => {
+    const allCharts = [
+        chartRain, chartAtmo,
+        detailedTempChart, detailedHumChart, detailedPresChart, detailedRainChart,
+        detailedWaterChart, detailedLightChart,
+        hourlyPrecipChart, weeklyRainChart
+    ];
+    allCharts.forEach(c => {
+        if (c) c.resize();
+    });
+});
+
+// Hard-kill fallback: always dismiss splash after 6s even if auth is slow
+setTimeout(() => {
+    const splash = document.getElementById('splash-screen');
+    if (splash) {
+        splash.style.opacity = '0';
+        setTimeout(() => splash.remove(), 500);
+    }
+}, 6000);
+
+// Check Auth State
+auth.onAuthStateChanged(async (user) => {
+    if (user) {
+        let userEmail = user.email || '';
+        try {
+            const userDoc = await db.collection('users').doc(user.uid).get();
+            if (userDoc.exists) {
+                const data = userDoc.data();
+                if (data.disabled === true) {
+                    await auth.signOut();
+                    window.location.href = "../index.html";
+                    return;
+                }
+                if (!userEmail && data.email) userEmail = data.email;
+            }
+        } catch (e) { console.error("Auth check failed:", e); }
+
+        // Strictly Email-based display name (never fall back to phone number)
+        const displayName = userEmail ? userEmail.split('@')[0].toUpperCase() : 'USER';
+        if (userEmailDisplay) userEmailDisplay.innerText = displayName + "'S DASHBOARD";
+        loadUserSettings(user);
+        startRealtimeUpdates();
+        fetchAdminConfig();
+        triggerForecastLoad();
+        loadWeeklyData();
+        populateHourlyTempTimeline(); // Render timeline immediately on startup
+        if (typeof updateBackgroundByTime === 'function') updateBackgroundByTime();
+    } else {
+        window.location.href = "../index.html";
+    }
+});
+
+let historyInitialized = false;
+let lastProcessedTime = null;
+
+function startRealtimeUpdates() {
+    // 0. Initialize History once on load
+    if (!historyInitialized) {
+        historyInitialized = true;
+        initializeChartHistory();
+        setupRealtimeHistoryListener();
+    }
+
+    // Safety timeout
+    setTimeout(() => {
+        const splash = document.getElementById('splash-screen');
+        if (splash) {
+            splash.style.opacity = '0';
+            setTimeout(() => splash.remove(), 500);
+        }
+    }, 5000);
+
+    const handleCurrentData = (data) => {
+        if (!data) {
+            updateStatusUI("No Data", "#94a3b8", false);
+            populateHourlyTempTimeline();
+            if (typeof updateBackgroundByTime === 'function') updateBackgroundByTime();
+        } else {
+            const rain = data.rainfall !== undefined ? parseFloat(data.rainfall) : (data.dailyRainfall !== undefined ? parseFloat(data.dailyRainfall) : 0.0);
+            const lat = data.lat !== undefined ? parseFloat(data.lat) : 0.0;
+            const lng = data.lng !== undefined ? parseFloat(data.lng) : 0.0;
+            const temp = data.temperature !== undefined ? parseFloat(data.temperature) : NaN;
+            const hum = data.humidity !== undefined ? parseFloat(data.humidity) : NaN;
+            const pres = data.pressure !== undefined ? parseFloat(data.pressure) : NaN;
+            const light = data.lightLevel !== undefined ? parseFloat(data.lightLevel) : (data.light !== undefined ? parseFloat(data.light) : -1.0);
+            const water = data.waterLevel !== undefined ? parseFloat(data.waterLevel) : -1.0;
+            const dewPoint = data.dewPoint !== undefined ? parseFloat(data.dewPoint) : NaN;
+            const heatIndex = data.heatIndex !== undefined ? parseFloat(data.heatIndex) : NaN;
+            const rainRate = data.rainRate !== undefined ? parseFloat(data.rainRate) : 0.0;
+            const rainIntensity = data.rainIntensity || 'None';
+
+            let cloudCover = data.cloudCover !== undefined ? parseFloat(data.cloudCover) : 0.0;
+            if ((data.cloudCover === undefined || cloudCover === 0) && light >= 0) {
+                const ratio = Math.min(1.0, light / maxClearSkyLux);
+                cloudCover = (1.0 - ratio) * 100.0;
+            }
+            const pressureTrend = data.pressureTrend !== undefined ? parseFloat(data.pressureTrend) : 0.0;
+            const waterRiseRate = data.waterRiseRate !== undefined ? parseFloat(data.waterRiseRate) : 0.0;
+
+            currentLatitude = lat;
+            currentLongitude = lng;
+
+            // Update reactive global state
+            currentSensorData = { rain, temp, rainRate, water, light, cloudCover };
+
+            if (rainfallValue) rainfallValue.innerText = rain.toFixed(2);
+            if (rainRateValue) rainRateValue.innerText = rainRate.toFixed(1);
+            if (rainIntensityBadge) {
+                rainIntensityBadge.innerText = rainIntensity;
+                rainIntensityBadge.className = `risk-badge ${getRainIntensityClass(rainIntensity)}`;
+            }
+
+            updateLocationName(lat, lng);
+
+            if (tempEl) tempEl.innerText = !isNaN(temp) ? temp.toFixed(1) : "--.-";
+            if (humidityEl) humidityEl.innerText = !isNaN(hum) ? hum.toFixed(0) : "--";
+            if (pressureEl) pressureEl.innerText = !isNaN(pres) ? pres.toFixed(1) : "----";
+
+            if (pressureTrendBadge) {
+                const trendStr = pressureTrend > 0.5 ? 'Rising' : (pressureTrend < -0.5 ? 'Falling' : 'Stable');
+                pressureTrendBadge.innerText = `${trendStr} (${pressureTrend > 0 ? '+' : ''}${pressureTrend.toFixed(1)} hPa)`;
+                pressureTrendBadge.className = `risk-badge ${pressureTrend < -1.0 ? 'warning' : 'safe'}`;
+            }
+
+            if (lightEl) lightEl.innerText = light >= 0 ? light.toFixed(0) : "--";
+            if (cloudCoverEl) cloudCoverEl.innerText = light >= 10 ? `${cloudCover.toFixed(0)}%` : "Night";
+            if (waterLevelEl) waterLevelEl.innerText = water >= 0 ? water.toFixed(1) : "--";
+            if (waterRiseRateEl) waterRiseRateEl.innerText = waterRiseRate !== 0 ? `${waterRiseRate > 0 ? '+' : ''}${waterRiseRate.toFixed(1)} cm/h` : "0.0 cm/h";
+            if (dewPointEl) dewPointEl.innerText = !isNaN(dewPoint) ? dewPoint.toFixed(1) : "--.-";
+            if (heatIndexEl) heatIndexEl.innerText = !isNaN(heatIndex) ? heatIndex.toFixed(1) : "--.-";
+
+            if (lat !== 0 && lng !== 0) {
+                const mapUrl = `https://www.google.com/maps?q=${lat},${lng}`;
+                if (mapLinkSidebar) mapLinkSidebar.href = mapUrl;
+                if (mapLinkMobile) mapLinkMobile.href = mapUrl;
+                if (mapLinkBtn) {
+                    mapLinkBtn.href = mapUrl;
+                    mapLinkBtn.style.opacity = "1";
+                    mapLinkBtn.style.pointerEvents = "auto";
+                }
+            }
+
+            const lastSeen = data.lastSeen;
+            const lastSeenDate = parseFirestoreTimestamp(lastSeen);
+            lastSeenTimestamp = lastSeenDate;
+            const lastSeenStr = (lastSeenDate && !isNaN(lastSeenDate.getTime())) ? lastSeenDate.toISOString() : new Date().toISOString();
+
+            // Trigger status check immediately
+            refreshSystemStatus();
+
+            // Auto load/update forecast if board location changed and coordinates are valid
+            if (lat !== 0 && lng !== 0 && (lat.toFixed(3) !== loadedForecastLatitude || lng.toFixed(3) !== loadedForecastLongitude)) {
+                loadOpenMeteoForecast(lat, lng);
+            }
+
+            updateStatusAndRisk(rain, rainRate, water, cloudCover, light);
+            updatePredictions(temp, hum, pres, rain, light, water, pressureTrend, cloudCover, waterRiseRate);
+            lucide.createIcons();
+
+            // Populate today's live forecast cards
+            updateTodayForecastDisplay(temp, cloudCover, light, water);
+
+            const currentMax = (maxRainfall && maxRainfall.innerText) ? parseFloat(maxRainfall.innerText) || 0 : 0;
+            if (maxRainfall && rain > currentMax) maxRainfall.innerText = rain.toFixed(2);
+
+            const now = new Date();
+            if (lastUpdate) lastUpdate.innerText = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+            if (lastSeenStr && lastSeenStr !== lastProcessedTime) {
+                lastProcessedTime = lastSeenStr;
+                updateCharts(rain, temp, hum, pres, water, light);
+                populateHourlyTempTimeline();
+
+                // Live-update today's bar in weeklyRainChart in real time!
+                if (weeklyRainChart && weeklyRainChart.data && weeklyRainChart.data.datasets.length > 0) {
+                    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+                    const todayName = days[new Date().getDay()];
+                    const todayIdx = weeklyRainChart.data.labels.indexOf(todayName);
+                    if (todayIdx !== -1) {
+                        const curBarVal = weeklyRainChart.data.datasets[0].data[todayIdx] || 0;
+                        if (rain > curBarVal) {
+                            weeklyRainChart.data.datasets[0].data[todayIdx] = rain;
+                            weeklyRainChart.update('none');
+                        }
+                    }
+                }
+            }
+        }
+
+        const splash = document.getElementById('splash-screen');
+        if (splash) {
+            splash.style.opacity = '0';
+            setTimeout(() => splash.remove(), 500);
+        }
+    };
+
+    if (rtdb) {
+        rtdb.ref('weather/current').on('value', snapshot => {
+            handleCurrentData(snapshot.val());
+        }, error => {
+            db.collection('weather').doc('current').onSnapshot(doc => {
+                handleCurrentData(doc.exists ? doc.data() : null);
+            });
+        });
+    } else {
+        db.collection('weather').doc('current').onSnapshot(doc => {
+            handleCurrentData(doc.exists ? doc.data() : null);
+        });
+    }
+}
+
+function getRainIntensityClass(intensity) {
+    if (intensity === 'Light') return 'alert-level';
+    if (intensity === 'Moderate') return 'warning';
+    if (intensity === 'Heavy' || intensity === 'Violent') return 'danger';
+    return 'safe';
+}
+
+function updateTodayForecastDisplay(temp, cloudCover, light, water) {
+    const todayTemp = document.getElementById('today-temp');
+    const todayClouds = document.getElementById('today-clouds');
+    const todayWater = document.getElementById('today-water');
+
+    if (todayTemp) todayTemp.innerText = `${temp.toFixed(1)}°C`;
+    if (todayClouds) todayClouds.innerText = light >= 10 ? `${cloudCover.toFixed(0)}%` : "Night";
+    if (todayWater) todayWater.innerText = water >= 0 ? `${water.toFixed(1)} cm` : "--";
+}
+
+function updatePredictions(temp, hum, pres, rain, light, water, pressureTrend, cloudCover, waterRiseRate) {
+    let prediction = "Stable";
+    let desc = "Atmospheric conditions are currently normal.";
+    let icon = "sun";
+    let rainProb = 5;
+    let floodRisk = 0;
+
+    // Apply Sensor Offsets
+    temp += (sensorOffsets ? sensorOffsets.temp : 0);
+    water += (sensorOffsets ? sensorOffsets.water : 0);
+
+    // Advanced Local Mathematical Model: Multi-Factor Weighted Scoring (0-10)
+    // Normalize weights to 10 points total
+    const weights = modelWeights || { pres: 40, hum: 20, light: 20, rain: 20 };
+    const wPres = weights.pres / 10;
+    const wHum = weights.hum / 10;
+    const wLight = weights.light / 10;
+    const wRain = weights.rain / 10;
+
+    // 1. Barometric Pressure Drop (Relative to weight)
+    const baseScore = Math.max(0, (standardBasePressure - pres) * 0.4);
+    const trendFactor = pressureTrend < 0 ? Math.min(2.0, Math.abs(pressureTrend) * 1.5) : 0;
+    const pressureScore = Math.min(wPres, (baseScore + trendFactor) * (wPres / 4.0));
+
+    // 2. Moisture Saturation (Relative to weight)
+    const humidityScore = (hum / 100) * wHum;
+
+    // 3. Solar Radiation Drop / Cloud Cover Proxy (Relative to weight)
+    let lightScore = 0;
+    if (light >= 10) {
+        lightScore = (cloudCover / 100) * wLight;
+    }
+
+    // 4. Current Precipitation Intensity (Relative to weight)
+    const rainScore = Math.min(wRain, (rain / alertThresholdVal) * wRain);
+
+    let predictionScore = Math.min(10, pressureScore + humidityScore + lightScore + rainScore);
+
+    // Dynamic Rain Probability based on multi-factor score
+    rainProb = Math.max(5, Math.round(predictionScore * 10));
+
+    // Display Factor Breakdown in prediction card
+    const fPres = document.getElementById('factor-pressure');
+    const fHum = document.getElementById('factor-humidity');
+    const fLight = document.getElementById('factor-light');
+    const fRain = document.getElementById('factor-rain');
+
+    if (fPres) fPres.innerText = `${pressureScore.toFixed(1)} / ${wPres.toFixed(1)}`;
+    if (fHum) fHum.innerText = `${humidityScore.toFixed(1)} / ${wHum.toFixed(1)}`;
+    if (fLight) fLight.innerText = light >= 10 ? `${lightScore.toFixed(1)} / ${wLight.toFixed(1)}` : 'Night';
+    if (fRain) fRain.innerText = `${rainScore.toFixed(1)} / ${wRain.toFixed(1)}`;
+
+    // Local Forecast Determination logic
+    if (pressureTrend < -1.5 && hum > 85) {
+        prediction = "Storm Imminent";
+        desc = "Rapid pressure drop and high humidity suggest heavy rainfall and wind.";
+        icon = "cloud-lightning";
+        rainProb = Math.max(rainProb, 95);
+    } else if (pres < 1008 && hum > 78) {
+        prediction = "Rain Expected";
+        desc = "Unstable atmospheric system producing localized precipitation.";
+        icon = "cloud-rain";
+        rainProb = Math.max(rainProb, 80);
+    } else if (light !== undefined && light >= 0 && light < 6000) {
+        prediction = "Mostly Overcast";
+        desc = "Heavy cloud cover or reduced light level detected.";
+        icon = "cloud";
+        rainProb = Math.max(rainProb, 45);
+    } else if (temp > 33 && hum < 55) {
+        prediction = "Hot & Clear";
+        desc = "High temperature and dry atmosphere. Clear conditions.";
+        icon = "sun";
+        rainProb = 5;
+    }
+
+    // Advanced Flood Risk Computation (Combined Factors)
+    const rainRisk = (rain / alertThresholdVal) * 100;
+    const maxChannelCapacity = physicalMountHeight * 0.8; // Assume 80% is critical
+    const waterLevelRisk = water >= 0 ? (water / maxChannelCapacity) * 100 : 0;
+
+    let combinedFloodRisk = Math.max(rainRisk, waterLevelRisk);
+    if (waterRiseRate > 0) {
+        combinedFloodRisk += (waterRiseRate * 2.5); // Boost risk if rising fast
+    }
+    floodRisk = Math.min(100, combinedFloodRisk);
+
+    // Water level specific risk (Visual Gauge)
+    let waterGaugeRisk = water >= 0 ? Math.min(100, (water / maxChannelCapacity) * 100) : 0;
+
+    // Update UI
+    const pTitle = document.getElementById('prediction-title');
+    const pDesc = document.getElementById('prediction-desc');
+    const pIconBox = document.getElementById('prediction-icon-box');
+    const pRain = document.getElementById('prob-rain');
+    const pFlood = document.getElementById('prob-flood');
+    const pWater = document.getElementById('prob-water');
+    const pScore = document.getElementById('prediction-score-value');
+
+    const todayRainChance = document.getElementById('today-rain-chance');
+    if (todayRainChance) todayRainChance.innerText = `${rainProb}%`;
+
+    // Update Today Forecast section main condition
+    const todayCondition = document.getElementById('today-condition');
+    const todayDetail = document.getElementById('today-detail');
+    const todayWeatherIcon = document.getElementById('today-weather-icon');
+    if (todayCondition) todayCondition.innerText = prediction;
+    if (todayDetail) todayDetail.innerText = desc;
+    if (todayWeatherIcon) todayWeatherIcon.innerHTML = `<i data-lucide="${icon}"></i>`;
+
+    if (pTitle) pTitle.innerText = prediction;
+    if (pDesc) pDesc.innerText = desc;
+    if (pIconBox) pIconBox.innerHTML = `<i data-lucide="${icon}"></i>`;
+    if (pRain) pRain.style.width = rainProb + "%";
+    if (pFlood) pFlood.style.width = floodRisk + "%";
+    if (pWater) pWater.style.width = waterGaugeRisk + "%";
+    if (pScore) pScore.innerText = predictionScore.toFixed(1);
+
+    // Update model guidance
+    const guidanceText = document.getElementById('model-guidance-text');
+    if (guidanceText) {
+        if (waterRiseRate > 10.0) {
+            guidanceText.innerText = `ALERT: Flood water is rising rapidly (+${waterRiseRate.toFixed(1)} cm/h). Drainage overflows could occur in less than 2 hours.`;
+        } else if (pressureTrend < -2.0) {
+            guidanceText.innerText = `WARNING: Sudden barometric drop detected (${pressureTrend.toFixed(1)} hPa). Highly unstable storm system incoming.`;
+        } else if (rain > 0) {
+            guidanceText.innerText = `Active rainfall detected. local water level is currently at ${water.toFixed(1)} cm. Monitoring rise rate.`;
+        } else {
+            guidanceText.innerText = "All atmospheric parameters and localized water levels are currently within safe limits.";
+        }
+    }
+
+    lucide.createIcons();
+}
+
+let currentSelectedRange = 'today';
+let customSelectedDate = null;
+let historyQuerySeq = 0;
+
+async function initializeChartHistory(rangeMode = currentSelectedRange, customDateStr = customSelectedDate) {
+    currentSelectedRange = rangeMode;
+    customSelectedDate = customDateStr;
+    const thisQueryId = ++historyQuerySeq;
+
+    const allCharts = [
+        chartRain, chartAtmo,
+        detailedTempChart, detailedHumChart, detailedPresChart, detailedRainChart,
+        detailedWaterChart, detailedLightChart,
+        weeklyRainChart
+    ];
+
+    allCharts.forEach(c => {
+        if (c) {
+            c.data.labels = [];
+            c.data.datasets.forEach(d => {
+                d.data = [];
+                d.tension = currentGraphTension;
+            });
+        }
+    });
+
+    let startDate, endDate;
+    const now = new Date();
+
+    if (rangeMode === 'today') {
+        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+        endDate = new Date();
+    } else if (rangeMode === '7d') {
+        startDate = new Date();
+        startDate.setDate(startDate.getDate() - 7);
+        startDate.setHours(0, 0, 0, 0);
+        endDate = new Date();
+    } else if (rangeMode === '30d') {
+        startDate = new Date();
+        startDate.setDate(startDate.getDate() - 30);
+        startDate.setHours(0, 0, 0, 0);
+        endDate = new Date();
+    } else if (rangeMode === 'custom' && customDateStr) {
+        const [y, m, d] = customDateStr.split('-').map(Number);
+        startDate = new Date(y, m - 1, d, 0, 0, 0);
+        endDate = new Date(y, m - 1, d, 23, 59, 59);
+    } else {
+        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+        endDate = new Date();
+    }
+
+    try {
+        let rawHistory = [];
+
+        if (rangeMode === 'today') {
+            // For today: get documents from start of today, or fallback to the latest 30 if brand new day
+            const snapshot = await db.collection('weather_history')
+                .where('timestamp', '>=', startDate)
+                .orderBy('timestamp', 'asc')
+                .limit(200)
+                .get();
+
+            if (!snapshot.empty) {
+                rawHistory = snapshot.docs.map(doc => doc.data());
+            } else {
+                const fallback = await db.collection('weather_history')
+                    .orderBy('timestamp', 'desc')
+                    .limit(30)
+                    .get();
+                if (!fallback.empty) rawHistory = fallback.docs.map(doc => doc.data()).reverse();
+            }
+        } else if (rangeMode === 'custom' && customDateStr) {
+            const snapshot = await db.collection('weather_history')
+                .where('timestamp', '>=', startDate)
+                .where('timestamp', '<=', endDate)
+                .orderBy('timestamp', 'asc')
+                .limit(200)
+                .get();
+
+            if (!snapshot.empty) {
+                rawHistory = snapshot.docs.map(doc => doc.data());
+            }
+        } else {
+            // 7d or 30d range
+            const snapshot = await db.collection('weather_history')
+                .where('timestamp', '>=', startDate)
+                .orderBy('timestamp', 'asc')
+                .limit(500)
+                .get();
+
+            if (!snapshot.empty) {
+                rawHistory = snapshot.docs.map(doc => doc.data());
+            }
+        }
+
+        // If a newer query was fired while waiting for Firestore, discard this stale result
+        if (thisQueryId !== historyQuerySeq) return;
+
+        // Downsample smoothly to max 30 clean points
+        const history = downsampleHistoricalPoints(rawHistory, 30);
+
+        history.forEach(data => {
+            const time = parseFirestoreTimestamp(data.timestamp);
+            
+            let timeLabel;
+            if (rangeMode === 'today' || rangeMode === 'custom') {
+                timeLabel = time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            } else if (rangeMode === '7d') {
+                timeLabel = `${time.toLocaleDateString([], { weekday: 'short' })} ${time.toLocaleTimeString([], { hour: 'numeric' })}`;
+            } else {
+                timeLabel = time.toLocaleDateString([], { month: 'short', day: 'numeric' });
+            }
+
+            const r = parseFloat(data.rainfall) || 0;
+            const t = parseFloat(data.temperature) || 0;
+            const h = parseFloat(data.humidity) || 0;
+            const p = parseFloat(data.pressure) || 0;
+            const w = (data.waterLevel !== undefined ? parseFloat(data.waterLevel) : (data.water !== undefined ? parseFloat(data.water) : 0.0)) || 0.0;
+            const l = (data.lightLevel !== undefined ? parseFloat(data.lightLevel) : (data.light !== undefined ? parseFloat(data.light) : 0.0)) || 0.0;
+
+            if (chartRain) {
+                chartRain.data.labels.push(timeLabel);
+                chartRain.data.datasets[0].data.push(r);
+            }
+            if (chartAtmo) {
+                chartAtmo.data.labels.push(timeLabel);
+                chartAtmo.data.datasets[0].data.push(t);
+                chartAtmo.data.datasets[1].data.push(h);
+            }
+            if (detailedTempChart) {
+                detailedTempChart.data.labels.push(timeLabel);
+                detailedTempChart.data.datasets[0].data.push(t);
+            }
+            if (detailedHumChart) {
+                detailedHumChart.data.labels.push(timeLabel);
+                detailedHumChart.data.datasets[0].data.push(h);
+            }
+            if (detailedPresChart) {
+                detailedPresChart.data.labels.push(timeLabel);
+                detailedPresChart.data.datasets[0].data.push(p);
+            }
+            if (detailedRainChart) {
+                detailedRainChart.data.labels.push(timeLabel);
+                detailedRainChart.data.datasets[0].data.push(r);
+            }
+            if (detailedWaterChart) {
+                detailedWaterChart.data.labels.push(timeLabel);
+                detailedWaterChart.data.datasets[0].data.push(w);
+            }
+            if (detailedLightChart) {
+                detailedLightChart.data.labels.push(timeLabel);
+                detailedLightChart.data.datasets[0].data.push(l);
+            }
+        });
+    } catch (error) {
+        console.error("Error loading weather history:", error);
+    }
+
+    allCharts.forEach(c => {
+        if (c) c.update();
+    });
+}
+
+// Attach User Range Selector listeners
+document.addEventListener('DOMContentLoaded', () => {
+    setupRangeSelectorListeners();
+});
+setTimeout(setupRangeSelectorListeners, 500);
+
+function setupRangeSelectorListeners() {
+    const rangeBar = document.getElementById('user-time-range-bar');
+    if (!rangeBar || rangeBar.dataset.initialized) return;
+    rangeBar.dataset.initialized = 'true';
+
+    const pills = rangeBar.querySelectorAll('.range-pill');
+    const datePicker = document.getElementById('user-chart-date-picker');
+
+    if (datePicker) {
+        const todayStr = new Date().toISOString().split('T')[0];
+        datePicker.max = todayStr;
+        datePicker.value = todayStr;
+
+        datePicker.addEventListener('change', () => {
+            if (!datePicker.value) return;
+            pills.forEach(p => p.classList.remove('active'));
+            initializeChartHistory('custom', datePicker.value);
+        });
+    }
+
+    pills.forEach(pill => {
+        pill.addEventListener('click', () => {
+            pills.forEach(p => p.classList.remove('active'));
+            pill.classList.add('active');
+            const range = pill.getAttribute('data-range');
+            initializeChartHistory(range);
+        });
+    });
+}
+
+// Real-time listener for weather_history updates so new history records automatically update charts without page refresh
+let historyListenerUnsubscribe = null;
+function setupRealtimeHistoryListener() {
+    if (historyListenerUnsubscribe) return;
+
+    try {
+        historyListenerUnsubscribe = db.collection('weather_history')
+            .orderBy('timestamp', 'desc')
+            .limit(1)
+            .onSnapshot(snapshot => {
+                if (!snapshot.empty && !snapshot.metadata.hasPendingWrites) {
+                    loadWeeklyData();
+                    if (currentSelectedRange === 'today' || currentSelectedRange === '7d' || currentSelectedRange === '30d') {
+                        initializeChartHistory(currentSelectedRange);
+                    }
+                }
+            }, err => console.warn("Realtime history sync note:", err));
+    } catch (e) {
+        console.warn("Failed to attach weather_history onSnapshot:", e);
+    }
+}
+
+let lastUserChartUpdateTimestamp = 0;
+const USER_CHART_UPDATE_INTERVAL_MS = 60000; // 1 minute interval for adding new points
+
+function updateCharts(rain, temp, hum, pres, water, light) {
+    const now = new Date();
+    const timeLabel = formatDateTimeLabel(now);
+    const maxPoints = 30; // Clean fixed 30-point window
+
+    const nowMs = now.getTime();
+    const isNewPointDue = (nowMs - lastUserChartUpdateTimestamp >= USER_CHART_UPDATE_INTERVAL_MS) || lastUserChartUpdateTimestamp === 0;
+
+    const updateChartData = (chart, value, label) => {
+        if (!chart || value === undefined || isNaN(value)) return;
+        if (isNewPointDue) {
+            chart.data.labels.push(label);
+            chart.data.datasets[0].data.push(value);
+            if (chart.data.labels.length > maxPoints) {
+                chart.data.labels.shift();
+                chart.data.datasets[0].data.shift();
+            }
+        } else {
+            // Update last point in-place for real-time responsiveness without overcrowding
+            if (chart.data.datasets[0].data.length > 0) {
+                const lastIdx = chart.data.datasets[0].data.length - 1;
+                chart.data.datasets[0].data[lastIdx] = value;
+                chart.data.labels[lastIdx] = label;
+            } else {
+                chart.data.labels.push(label);
+                chart.data.datasets[0].data.push(value);
+            }
+        }
+        chart.update();
+    };
+
+    if (!isNaN(rain)) {
+        updateChartData(chartRain, rain, timeLabel);
+        updateChartData(detailedRainChart, rain, timeLabel);
+    }
+    if (!isNaN(temp)) updateChartData(detailedTempChart, temp, timeLabel);
+    if (!isNaN(hum)) updateChartData(detailedHumChart, hum, timeLabel);
+    if (!isNaN(pres)) updateChartData(detailedPresChart, pres, timeLabel);
+    if (water >= 0) updateChartData(detailedWaterChart, water, timeLabel);
+    if (light >= 0) updateChartData(detailedLightChart, light, timeLabel);
+
+    // Update Atmospheric Chart (Double Dataset)
+    if (chartAtmo && !isNaN(temp) && !isNaN(hum)) {
+        if (isNewPointDue) {
+            chartAtmo.data.labels.push(timeLabel);
+            chartAtmo.data.datasets[0].data.push(temp);
+            chartAtmo.data.datasets[1].data.push(hum);
+            if (chartAtmo.data.labels.length > maxPoints) {
+                chartAtmo.data.labels.shift();
+                chartAtmo.data.datasets[0].data.shift();
+                chartAtmo.data.datasets[1].data.shift();
+            }
+        } else {
+            if (chartAtmo.data.datasets[0].data.length > 0) {
+                const lastIdx = chartAtmo.data.datasets[0].data.length - 1;
+                chartAtmo.data.datasets[0].data[lastIdx] = temp;
+                chartAtmo.data.datasets[1].data[lastIdx] = hum;
+                chartAtmo.data.labels[lastIdx] = timeLabel;
+            } else {
+                chartAtmo.data.labels.push(timeLabel);
+                chartAtmo.data.datasets[0].data.push(temp);
+                chartAtmo.data.datasets[1].data.push(hum);
+            }
+        }
+        chartAtmo.update();
+    }
+
+    if (isNewPointDue) {
+        lastUserChartUpdateTimestamp = nowMs;
+    }
+}
+
+function updateStatusUI(text, color, isOnline) {
+    const dotClass = isOnline ? 'pulse-dot online' : 'pulse-dot';
+    if (systemStatusText) systemStatusText.innerText = text;
+    if (systemStatusDot) {
+        systemStatusDot.className = dotClass;
+        systemStatusDot.style.background = color;
+    }
+    if (systemStatusTextDesktop) systemStatusTextDesktop.innerText = text;
+    if (systemStatusDotDesktop) {
+        systemStatusDotDesktop.className = dotClass;
+        systemStatusDotDesktop.style.background = color;
+    }
+}
+
+function refreshSystemStatus() {
+    if (!lastSeenTimestamp) return;
+    const diffMinutes = (new Date() - lastSeenTimestamp) / 1000 / 60;
+    if (diffMinutes >= 15) {
+        updateStatusUI("Device Offline", "#ef4444", false);
+    } else {
+        updateStatusUI("System Active", "#10b981", true);
+    }
+}
+
+// Heartbeat Monitor - Force status check every 30 seconds
+setInterval(refreshSystemStatus, 30000);
+
+// Dynamic baselines from Firebase moved to top for better scoping
+function fetchAdminConfig() {
+    const handleConfigData = (data) => {
+        if (!data) return;
+        if (adminMessageDisplay) {
+            adminMessageDisplay.innerText = `"${data.alertMessageL2 || data.alertMessage || 'Monitoring active.'}"`;
+        }
+        if (data.alertThreshold) {
+            alertThresholdVal = parseFloat(data.alertThreshold);
+        }
+
+        // Apply Model Weights & Offsets
+        modelWeights = {
+            pres: data.weightPres || 40,
+            hum: data.weightHum || 20,
+            light: data.weightLight || 20,
+            rain: data.weightRain || 20
+        };
+        sensorOffsets = {
+            temp: data.tempOffset || 0,
+            water: data.waterOffset || 0
+        };
+        physicalMountHeight = data.mountHeight || 200;
+        maxClearSkyLux = data.maxClearLux || 65000;
+        standardBasePressure = data.basePressure || 1013;
+
+        // Apply Chart Settings
+        if (data.graphTension !== undefined) {
+            currentGraphTension = data.graphTension;
+        }
+        if (data.graphWindow !== undefined) {
+            currentGraphWindow = data.graphWindow;
+        }
+
+        const allCharts = [
+            chartRain, chartAtmo,
+            detailedTempChart, detailedHumChart, detailedPresChart, detailedRainChart,
+            detailedWaterChart, detailedLightChart,
+            weeklyRainChart
+        ];
+
+        allCharts.forEach(c => {
+            if (c) {
+                c.options.elements.line.tension = currentGraphTension;
+                c.update('none');
+            }
+        });
+
+        if (currentSensorData.temp !== undefined) {
+            updateStatusAndRisk(
+                currentSensorData.rain || 0,
+                currentSensorData.rainRate || 0,
+                currentSensorData.water || 0,
+                currentSensorData.cloudCover || 0,
+                currentSensorData.light || 0
+            );
+        }
+    };
+
+    if (rtdb) {
+        rtdb.ref('weather/config').on('value', snapshot => {
+            handleConfigData(snapshot.val());
+        }, error => {
+            db.collection('weather').doc('config').onSnapshot(doc => {
+                handleConfigData(doc.exists ? doc.data() : null);
+            });
+        });
+    } else {
+        db.collection('weather').doc('config').onSnapshot(doc => {
+            handleConfigData(doc.exists ? doc.data() : null);
+        });
+    }
+}
+
+function updateStatusAndRisk(dailyRain, rainRate, water, cloudCover, light) {
+    let status = "Safe";
+    let badgeClass = "risk-badge safe";
+    let risk = "Conditions are stable. Sensors reporting normal levels.";
+    let weatherType = "sunny";
+
+    const dangerThreshold = alertThresholdVal;
+    const warningThreshold = alertThresholdVal * 0.5;
+    const maxChannelCapacity = physicalMountHeight * 0.8;
+
+    // --- 1. Risk & Flood Alert Status (Based on dailyRain accum & water level) ---
+    if (water >= maxChannelCapacity) {
+        status = "FLOODING";
+        badgeClass = "risk-badge danger";
+        risk = `CRITICAL: Drainage overflow detected! Water level is at ${water.toFixed(1)} cm.`;
+    } else if (water >= (maxChannelCapacity * 0.75)) {
+        status = "HIGH RISK";
+        badgeClass = "risk-badge danger";
+        risk = `ALERT: Local water levels are extremely high (${water.toFixed(1)} cm). Overflow threat imminent.`;
+    } else if (dailyRain >= dangerThreshold) {
+        status = "CRITICAL";
+        badgeClass = "risk-badge danger";
+        risk = `Extreme danger: Daily rainfall threshold of ${dangerThreshold.toFixed(2)}mm reached! Seek higher ground.`;
+    } else if (dailyRain >= warningThreshold) {
+        status = "WARNING";
+        badgeClass = "risk-badge warning";
+        risk = `Heavy rain: Cumulative daily rainfall rising toward threshold of ${dangerThreshold.toFixed(2)}mm.`;
+    } else if (dailyRain > 0) {
+        status = "ALERT";
+        badgeClass = "risk-badge alert-level";
+        risk = `Precipitation recorded today (${dailyRain.toFixed(1)} mm). Monitoring conditions.`;
+    }
+
+    // --- 2. Visual Weather Background (Based on ACTIVE rainRate mm/h) ---
+    if (rainRate >= 50.0) {
+        weatherType = "stormy";
+    } else if (rainRate > 0.0) {
+        weatherType = "rainy";
+    } else {
+        const hour = new Date().getHours();
+        const isDaytime = hour >= 5 && hour < 18; // 5:00 AM to 6:00 PM
+
+        if (hour >= 18 || hour < 5) {
+            weatherType = 'night';
+        } else if (isDaytime && light !== undefined && light >= 0 && light < 6000) {
+            weatherType = 'cloudy';
+        } else {
+            weatherType = 'sunny';
+        }
+    }
+
+    if (typeof setWeatherBackground === 'function') setWeatherBackground(weatherType);
+
+    if (alertBadge) {
+        alertBadge.innerText = status;
+        alertBadge.className = badgeClass;
+    }
+    if (riskLevelText) riskLevelText.innerText = risk;
+
+    // Trigger Web Push notification if danger level escalated
+    if (status === "WARNING" || status === "HIGH RISK" || status === "CRITICAL" || status === "FLOODING") {
+        triggerFloodPushNotification(status, risk);
+    }
+}
+
+// ── PWA & Web Push Notification System ──────────────────────────────────
+let deferredInstallPrompt = null;
+let lastNotifiedStatus = "Safe";
+
+// 1. Register Service Worker
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('../service-worker.js')
+            .then(reg => console.log('[PWA] Service Worker registered:', reg.scope))
+            .catch(err => console.warn('[PWA] Service Worker registration failed:', err));
+    });
+}
+
+// 2. Handle PWA Install Prompt
+window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredInstallPrompt = e;
+    const headerBtn = document.getElementById('header-install-btn');
+    const sidebarBtn = document.getElementById('sidebar-install-btn');
+    if (headerBtn) headerBtn.style.display = 'inline-flex';
+    if (sidebarBtn) sidebarBtn.style.display = 'flex';
+});
+
+const triggerPWAInstall = async () => {
+    if (deferredInstallPrompt) {
+        deferredInstallPrompt.prompt();
+        const { outcome } = await deferredInstallPrompt.userChoice;
+        if (outcome === 'accepted') {
+            console.log('[PWA] User installed BRIANE');
+        }
+        deferredInstallPrompt = null;
+        const headerBtn = document.getElementById('header-install-btn');
+        const sidebarBtn = document.getElementById('sidebar-install-btn');
+        if (headerBtn) headerBtn.style.display = 'none';
+        if (sidebarBtn) sidebarBtn.style.display = 'none';
+    } else {
+        alert("📲 To install BRIANE on your phone:\n• Android Chrome: Tap the top-right 3 dots (⋮) and tap 'Install App' or 'Add to Home screen'.\n• iPhone Safari: Tap the Share button (⎋) and select 'Add to Home Screen'.");
+    }
+};
+
+const headerInstallBtn = document.getElementById('header-install-btn');
+const sidebarInstallBtn = document.getElementById('sidebar-install-btn');
+if (headerInstallBtn) headerInstallBtn.addEventListener('click', triggerPWAInstall);
+if (sidebarInstallBtn) sidebarInstallBtn.addEventListener('click', triggerPWAInstall);
+
+// 3. Web Push Flood Notification Trigger
+function triggerFloodPushNotification(status, message) {
+    if (status === "Safe" || status === "ALERT" || status === lastNotifiedStatus) return;
+    lastNotifiedStatus = status;
+
+    if ('Notification' in window && Notification.permission === 'granted') {
+        try {
+            const notifTitle = `🚨 BRIANE FLOOD WARNING: ${status}`;
+            const notifOptions = {
+                body: message,
+                icon: '../assets/icon.png',
+                badge: '../assets/icon.png',
+                vibrate: [300, 150, 300, 150, 300],
+                tag: 'briane-flood-alert',
+                renotify: true
+            };
+            if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+                navigator.serviceWorker.ready.then(reg => {
+                    reg.showNotification(notifTitle, notifOptions);
+                });
+            } else {
+                new Notification(notifTitle, notifOptions);
+            }
+        } catch (e) {
+            console.warn("Notification error:", e);
+        }
+    }
+}
+
+// 4. Notification Permission UI Setup
+function initNotificationControls() {
+    const notifBtn = document.getElementById('pwa-notif-btn');
+    const notifBanner = document.getElementById('push-notif-banner');
+    const enableBtn = document.getElementById('push-notif-enable-btn');
+    const dismissBtn = document.getElementById('push-notif-dismiss-btn');
+
+    if (!('Notification' in window)) {
+        if (notifBtn) notifBtn.style.display = 'none';
+        if (notifBanner) notifBanner.style.display = 'none';
+        return;
+    }
+
+    const updateNotifUI = () => {
+        if (Notification.permission === 'granted') {
+            if (notifBtn) {
+                notifBtn.classList.add('active');
+                notifBtn.title = "Flood Notifications Enabled";
+            }
+            if (notifBanner) notifBanner.style.display = 'none';
+        } else if (Notification.permission === 'default') {
+            if (notifBtn) notifBtn.classList.remove('active');
+            const dismissed = localStorage.getItem('briane_notif_banner_dismissed');
+            if (notifBanner && !dismissed) notifBanner.style.display = 'flex';
+        } else {
+            if (notifBtn) {
+                notifBtn.classList.remove('active');
+                notifBtn.title = "Notifications blocked in browser settings";
+            }
+            if (notifBanner) notifBanner.style.display = 'none';
+        }
+    };
+
+    updateNotifUI();
+
+    const requestPerm = async () => {
+        try {
+            const permission = await Notification.requestPermission();
+            updateNotifUI();
+            if (permission === 'granted') {
+                new Notification("✅ Flood Notifications Activated", {
+                    body: "You will receive immediate warnings when river levels or rainfall reach danger levels.",
+                    icon: "../assets/icon.png"
+                });
+            }
+        } catch (err) {
+            console.warn("Permission request failed:", err);
+        }
+    };
+
+    if (enableBtn) enableBtn.addEventListener('click', requestPerm);
+    if (notifBtn) notifBtn.addEventListener('click', requestPerm);
+    if (dismissBtn) {
+        dismissBtn.addEventListener('click', () => {
+            if (notifBanner) notifBanner.style.display = 'none';
+            localStorage.setItem('briane_notif_banner_dismissed', 'true');
+        });
+    }
+}
+document.addEventListener('DOMContentLoaded', initNotificationControls);
+setTimeout(initNotificationControls, 600);
+
+// Logout Logic (Unified for Sidebar and Mobile Header)
+document.querySelectorAll('.logout-trigger').forEach(btn => {
+    btn.addEventListener('click', async () => {
+        if (confirm("Are you sure you want to sign out?")) {
+            try {
+                await auth.signOut();
+                window.location.href = "../index.html";
+            } catch (error) {
+                console.error("Logout failed:", error);
+            }
+        }
+    });
+});
+
+// ═══════════════════════════════════════════════
+// SETTINGS SECTION
+// ═══════════════════════════════════════════════
+
+function showSettingsMsg(id, message, isSuccess = true) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = message;
+    el.className = `settings-msg ${isSuccess ? 'success' : 'error'}`;
+    el.style.display = 'flex';
+    setTimeout(() => { el.style.display = 'none'; }, 5000);
+}
+
+function checkPhoneStatus(phone) {
+    const banner = document.getElementById('phone-warning-banner');
+    const badge = document.getElementById('phone-status-badge');
+    const isConfigured = phone && typeof phone === 'string' && phone.trim().startsWith('+') && phone.trim().length >= 10;
+
+    if (banner) {
+        banner.style.display = isConfigured ? 'none' : 'flex';
+    }
+    if (badge) {
+        badge.className = `settings-badge ${isConfigured ? 'verified' : 'warning'}`;
+        badge.innerHTML = isConfigured 
+            ? '<i data-lucide="shield-check"></i> Configured' 
+            : '<i data-lucide="alert-triangle"></i> Not Configured';
+        lucide.createIcons();
+    }
+    return isConfigured;
+}
+
+// Action button on Home tab Emergency Phone Alert Banner
+const phoneAlertActionBtn = document.getElementById('phone-alert-action-btn');
+if (phoneAlertActionBtn) {
+    phoneAlertActionBtn.addEventListener('click', () => {
+        switchToSection('settings');
+        const phoneInput = document.getElementById('settings-phone');
+        if (phoneInput) {
+            setTimeout(() => {
+                phoneInput.focus();
+                phoneInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 200);
+        }
+    });
+}
+
+// ── Load Settings on Auth ──────────────────────────────────────────────────
+function loadUserSettings(user) {
+    if (!user) return;
+    const emailDisplay = document.getElementById('settings-email-display');
+
+    // 1. Instantly set email synchronously from Auth object (no loading delay!)
+    const initialEmail = user.email || '—';
+    if (emailDisplay) {
+        if (emailDisplay.tagName === 'INPUT') emailDisplay.value = initialEmail;
+        else emailDisplay.textContent = initialEmail;
+    }
+
+    // 2. Fetch Firestore profile for emergency contact phone number
+    db.collection('users').doc(user.uid).get().then(doc => {
+        const data = doc.exists ? doc.data() : {};
+
+        const finalEmail = user.email || data.email || '—';
+        if (emailDisplay) {
+            if (emailDisplay.tagName === 'INPUT') emailDisplay.value = finalEmail;
+            else emailDisplay.textContent = finalEmail;
+        }
+
+        // Phone number is purely from Firestore contact data
+        const phoneInput = document.getElementById('settings-phone');
+        const currentPhone = data.phoneNumber || '';
+        if (phoneInput) phoneInput.value = currentPhone;
+        checkPhoneStatus(currentPhone);
+    }).catch(e => {
+        console.warn('Settings load error:', e);
+        checkPhoneStatus('');
+    });
+}
+
+// Hook into existing auth state to load settings
+auth.onAuthStateChanged(user => {
+    if (user) loadUserSettings(user);
+});
+
+// ── Save Phone Number ──────────────────────────────────────────────────────
+const savePhoneBtn = document.getElementById('save-phone-btn');
+if (savePhoneBtn) {
+    savePhoneBtn.addEventListener('click', async () => {
+        const user = auth.currentUser;
+        if (!user) return;
+
+        const phone = document.getElementById('settings-phone')?.value.trim();
+        if (!phone) {
+            showSettingsMsg('profile-msg', '⚠️ Phone number is required! Please enter your mobile number.', false);
+            return;
+        }
+        if (!phone.startsWith('+') || phone.length < 10) {
+            showSettingsMsg('profile-msg', '⚠️ Incorrect format! Phone number must include country code and be correct (e.g. +639123456789).', false);
+            return;
+        }
+
+        try {
+            savePhoneBtn.disabled = true;
+            await db.collection('users').doc(user.uid).update({ phoneNumber: phone });
+            
+            // Signal ESP32 that user phone list changed
+            const version = Date.now();
+            if (rtdb) {
+                rtdb.ref('weather/config').update({ usersVersion: version });
+            }
+            db.collection('weather').doc('config').set({ usersVersion: version }, { merge: true });
+
+            checkPhoneStatus(phone);
+            showSettingsMsg('profile-msg', '✓ Correct phone number saved! Emergency flood SMS alerts activated.', true);
+        } catch (err) {
+            console.error('Save phone error:', err);
+            showSettingsMsg('profile-msg', 'Failed to save phone number. Please try again.', false);
+        } finally {
+            savePhoneBtn.disabled = false;
+        }
+    });
+}
+
+// ── Change Password ────────────────────────────────────────────────────────
+const changePasswordBtn = document.getElementById('change-password-btn');
+if (changePasswordBtn) {
+    changePasswordBtn.addEventListener('click', async () => {
+        const user = auth.currentUser;
+        if (!user) return;
+
+        const currentPw = document.getElementById('settings-current-pw')?.value;
+        const newPw = document.getElementById('settings-new-pw')?.value;
+        const confirmPw = document.getElementById('settings-confirm-pw')?.value;
+
+        if (!currentPw || !newPw || !confirmPw) {
+            showSettingsMsg('password-msg', 'Please fill in all password fields.', false);
+            return;
+        }
+        if (newPw !== confirmPw) {
+            showSettingsMsg('password-msg', 'New passwords do not match.', false);
+            return;
+        }
+        if (newPw.length < 6) {
+            showSettingsMsg('password-msg', 'Password must be at least 6 characters.', false);
+            return;
+        }
+
+        try {
+            changePasswordBtn.disabled = true;
+            changePasswordBtn.textContent = 'Updating…';
+
+            // Re-authenticate before sensitive change
+            const credential = firebase.auth.EmailAuthProvider.credential(user.email, currentPw);
+            await user.reauthenticateWithCredential(credential);
+            await user.updatePassword(newPw);
+
+            // Clear fields
+            ['settings-current-pw', 'settings-new-pw', 'settings-confirm-pw'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.value = '';
+            });
+
+            showSettingsMsg('password-msg', '✓ Password updated successfully!', true);
+        } catch (err) {
+            console.error('Password change error:', err);
+            let msg = 'Failed to update password.';
+            if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') msg = 'Current password is incorrect.';
+            else if (err.code === 'auth/weak-password') msg = 'New password is too weak.';
+            else if (err.code === 'auth/too-many-requests') msg = 'Too many attempts. Try again later.';
+            showSettingsMsg('password-msg', msg, false);
+        } finally {
+            changePasswordBtn.disabled = false;
+            changePasswordBtn.innerHTML = '<i data-lucide="lock"></i> Update Password';
+            lucide.createIcons();
+        }
+    });
+}
+
+// ── Settings Password Visibility Toggles ──────────────────────────────────
+document.querySelectorAll('.settings-toggle-pw').forEach(btn => {
+    btn.addEventListener('click', () => {
+        const targetId = btn.getAttribute('data-target');
+        const input = document.getElementById(targetId);
+        if (!input) return;
+        const isPassword = input.type === 'password';
+        input.type = isPassword ? 'text' : 'password';
+        btn.innerHTML = `<i data-lucide="${isPassword ? 'eye-off' : 'eye'}"></i>`;
+        lucide.createIcons();
+    });
+});
+
+// ── Danger Zone: Two-Step Account Deletion ────────────────────────────────
+const deleteAccountBtn = document.getElementById('delete-account-btn');
+if (deleteAccountBtn) {
+    deleteAccountBtn.addEventListener('click', async () => {
+        const user = auth.currentUser;
+        if (!user) return;
+
+        // Step 1: Ask user if they really want to delete the account
+        const confirmDelete = confirm(
+            '⚠️ Are you sure you really want to delete your account?\n\nThis will permanently remove your user profile and all associated data. This action cannot be undone!'
+        );
+        if (!confirmDelete) return;
+
+        // Step 2: Next ask for their password to proceed with deletion
+        const userPassword = prompt(
+            '🔐 Please enter your password to confirm and proceed with account deletion:'
+        );
+        if (!userPassword || userPassword.trim() === '') {
+            showSettingsMsg('danger-msg', 'Deletion cancelled — password is required to delete your account.', false);
+            return;
+        }
+
+        try {
+            deleteAccountBtn.disabled = true;
+            deleteAccountBtn.innerText = 'Deleting Account...';
+
+            const emailEl = document.getElementById('settings-email-display');
+            const userEmail = user.email || (emailEl?.tagName === 'INPUT' ? emailEl.value : emailEl?.textContent);
+            if (!userEmail || userEmail === '—' || userEmail === 'Loading...') {
+                showSettingsMsg('danger-msg', 'User email not found. Please sign in again.', false);
+                deleteAccountBtn.disabled = false;
+                deleteAccountBtn.innerHTML = '<i data-lucide="trash-2"></i> Delete Account';
+                lucide.createIcons();
+                return;
+            }
+
+            // Re-authenticate with password
+            const credential = firebase.auth.EmailAuthProvider.credential(userEmail, userPassword);
+            await user.reauthenticateWithCredential(credential);
+
+            // Delete user document from Firestore
+            try {
+                await db.collection('users').doc(user.uid).delete();
+            } catch (dbErr) {
+                console.warn('Firestore user profile deletion note:', dbErr);
+            }
+
+            // Delete Firebase Authentication user
+            await user.delete();
+
+            // Redirect to Login Page
+            window.location.href = '../index.html';
+
+        } catch (err) {
+            console.error('Delete account error:', err);
+            let msg = 'Account deletion failed.';
+            if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+                msg = 'Incorrect password! Account deletion cancelled.';
+            } else if (err.code === 'auth/too-many-requests') {
+                msg = 'Too many failed attempts. Please try again later.';
+            } else if (err.message) {
+                msg = err.message.replace('Firebase: ', '').split(' (')[0];
+            }
+            showSettingsMsg('danger-msg', msg, false);
+        } finally {
+            if (deleteAccountBtn) {
+                deleteAccountBtn.disabled = false;
+                deleteAccountBtn.innerHTML = '<i data-lucide="trash-2"></i> Delete Account';
+                lucide.createIcons();
+            }
+        }
+    });
+}
+
+// ══════════════════════════════════════════════════
+// LIVE EMERGENCY DIRECTORY & EVACUATION SYNC
+// ══════════════════════════════════════════════════
+
+function initResidentEmergencyDirectory() {
+    const hotlinesContainer = document.getElementById('resident-hotlines-container');
+    const evacuationContainer = document.getElementById('resident-evacuation-container');
+
+    if (!hotlinesContainer || !evacuationContainer || window._residentEmergencySyncInitialized) return;
+    window._residentEmergencySyncInitialized = true;
+
+    db.collection('systemConfig').doc('emergencyDirectory').onSnapshot((doc) => {
+        if (!doc.exists) return;
+        const data = doc.data();
+
+        // 1. Render Hotlines
+        if (Array.isArray(data.hotlines) && data.hotlines.length > 0) {
+            hotlinesContainer.innerHTML = '';
+            data.hotlines.forEach(h => {
+                const card = document.createElement('div');
+                card.className = `hotline-card ${h.badgeClass === 'priority' ? 'priority' : ''}`;
+                
+                let badgeClass = '';
+                if (h.badgeClass && h.badgeClass !== 'priority') {
+                    badgeClass = h.badgeClass;
+                }
+
+                card.innerHTML = `
+                    <div class="hotline-icon-badge ${badgeClass}">
+                        <i data-lucide="${escapeHtmlAttr(h.icon || 'phone')}"></i>
+                    </div>
+                    <div class="hotline-details">
+                        <span class="hotline-org">${escapeHtmlText(h.org || 'Emergency Service')}</span>
+                        <strong class="hotline-number">${escapeHtmlText(h.number || '')}</strong>
+                        <span class="hotline-sub">${escapeHtmlText(h.sub || '')}</span>
+                    </div>
+                    <a href="tel:${escapeHtmlAttr(h.callNumber || h.number || '')}" class="hotline-call-btn" title="Call ${escapeHtmlAttr(h.org || '')}">
+                        <i data-lucide="phone"></i>
+                        <span>Call</span>
+                    </a>
+                `;
+                hotlinesContainer.appendChild(card);
+            });
+        }
+
+        // 2. Render Evacuation Shelters
+        if (Array.isArray(data.shelters) && data.shelters.length > 0) {
+            evacuationContainer.innerHTML = '';
+            data.shelters.forEach(s => {
+                const card = document.createElement('div');
+                card.className = 'evac-card';
+
+                let statusBadgeClass = 'status-standby';
+                let statusIcon = 'clock';
+                let statusText = s.statusText || 'STANDBY';
+
+                if (s.status === 'open') {
+                    statusBadgeClass = 'status-open';
+                    statusIcon = 'check-circle-2';
+                } else if (s.status === 'full') {
+                    statusBadgeClass = 'status-standby';
+                    statusIcon = 'alert-triangle';
+                } else if (s.status === 'closed') {
+                    statusBadgeClass = 'status-standby';
+                    statusIcon = 'x-circle';
+                }
+
+                const amenitiesHtml = (s.amenities || []).map(a => `
+                    <span class="amenity-tag"><i data-lucide="check"></i> ${escapeHtmlText(a)}</span>
+                `).join('');
+
+                card.innerHTML = `
+                    <div class="evac-card-header">
+                        <div>
+                            <span class="evac-status-badge ${statusBadgeClass}"><i data-lucide="${statusIcon}"></i> ${escapeHtmlText(statusText)}</span>
+                            <h3 class="evac-name">${escapeHtmlText(s.name || 'Evacuation Center')}</h3>
+                        </div>
+                        <div class="evac-capacity-pill">
+                            <i data-lucide="users"></i>
+                            <span>Capacity: ${escapeHtmlText(s.capacity || '—')}</span>
+                        </div>
+                    </div>
+                    <p class="evac-address"><i data-lucide="map-pin"></i> ${escapeHtmlText(s.address || 'Location Coordinates')}</p>
+                    <div class="evac-amenities">
+                        ${amenitiesHtml}
+                    </div>
+                    <a href="${escapeHtmlAttr(s.mapUrl || 'https://maps.google.com')}" target="_blank" class="evac-directions-btn">
+                        <i data-lucide="navigation"></i>
+                        <span>View Map Directions</span>
+                    </a>
+                `;
+                evacuationContainer.appendChild(card);
+            });
+        }
+
+        if (window.lucide) lucide.createIcons();
+    }, (err) => {
+        console.warn("Real-time emergency directory sync warning:", err);
+    });
+}
+
+function escapeHtmlText(str) {
+    if (!str) return '';
+    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function escapeHtmlAttr(str) {
+    if (!str) return '';
+    return String(str).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+document.addEventListener('DOMContentLoaded', initResidentEmergencyDirectory);
+setTimeout(initResidentEmergencyDirectory, 500);
